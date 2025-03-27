@@ -1,0 +1,115 @@
+html,
+body {
+    height: 100%;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f8f9fa;
+    background-image: url('../assets/top-right.svg'), url('../assets/bottom-left.svg');
+    background-position: top right, bottom left;
+    background-repeat: no-repeat, no-repeat;
+    background-size: 70% 25%, 70% 25%;
+    font-family: 'DM Sans', sans-serif;
+}
+
+.container {
+    justify-content: center;
+    align-items: center;
+    margin: 0 auto;
+    padding: 25px;
+}
+
+.logo {
+    width: 60%;
+    margin-bottom: 20px;
+}
+.input-group-text {
+    background: #f8f9fa; /* Light background */
+    border-right: none;
+    border-radius: 12px;
+    border: 1px solid #ced4da;
+    width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.form-control-input {
+    border-left: none !important;
+    border: 1px solid #ced4da;
+    border-radius: 12px;
+    background: #f8f9fa;
+    padding: 12px;
+    width: calc(100% - 40px);
+    outline: none; /* Remove default outline */
+    transition: border-color 0.3s ease-in-out;
+}
+
+/* Change border color on focus */
+.form-control-input:focus {
+    border-color: #8b4f34 !important; /* Bootstrap primary blue */
+}
+
+/* Ensure the input group icon also changes border color on focus */
+.input-group:focus-within .input-group-text {
+    border-color: #8b4f34;
+}
+
+.text {
+    padding-bottom: 30px;
+}
+
+.fw-bold {
+    font-size: 26px;
+}
+
+.text-muted {
+    font-size: 14px;
+    color: #787878;
+}
+
+.input-group {
+    margin-bottom: 15px !important;
+}
+
+.btn-login {
+    background-color: #8b4f34;
+    color: white;
+    border-radius: 12px;
+    padding: 12px;
+    width: 100%;
+}
+
+.btn-login:hover {
+    background-color: #723d28;
+}
+
+.forgot-password {
+    display: block;
+    text-align: right;
+    margin-top: 10px;
+    font-size: 14px;
+    color: #8b4f34;
+    text-decoration: none;
+}
+
+.forgot-password:hover {
+    text-decoration: underline;
+}
+
+.terms {
+    font-size: 12px;
+    margin-top: 15px;
+    color: #777;
+    text-align: center;
+}
+
+.terms a {
+    color: #8b4f34;
+    text-decoration: none;
+}
+
+.terms a:hover {
+    text-decoration: underline;
+}
