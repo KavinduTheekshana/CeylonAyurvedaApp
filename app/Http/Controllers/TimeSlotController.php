@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Booking;
+use App\Models\Service;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
@@ -18,7 +19,7 @@ class TimeSlotController extends Controller
 
         $serviceId = $request->serviceId;
         $date = $request->date;
-        $duration = $request->duration;
+        $duration = (int)$request->duration; // Ensure duration is an integer
 
         // Get business hours
         $startHour = 9; // 9 AM
@@ -37,27 +38,37 @@ class TimeSlotController extends Controller
         for ($hour = $startHour; $hour < $endHour; $hour++) {
             for ($minute = 0; $minute < 60; $minute += $intervalMinutes) {
                 $slotTime = sprintf('%02d:%02d', $hour, $minute);
-                $endTime = Carbon::createFromFormat('H:i', $slotTime)->addMinutes($duration)->format('H:i');
+
+                // Create Carbon instances for calculations
+                $slotStartCarbon = Carbon::createFromFormat('H:i', $slotTime);
+                $slotEndCarbon = (clone $slotStartCarbon)->addMinutes($duration);
+                $endTime = $slotEndCarbon->format('H:i');
 
                 // Check if this slot overlaps with any existing booking
                 $available = true;
 
                 foreach ($bookings as $booking) {
-                    $bookingStart = Carbon::createFromFormat('H:i:s', $booking->time);
-                    $bookingEnd = (clone $bookingStart)->addMinutes($booking->service->duration);
+                    $bookingStartTime = substr($booking->time, 0, 5); // Get HH:MM format
+                    $bookingStart = Carbon::createFromFormat('H:i', $bookingStartTime);
 
-                    $slotStart = Carbon::createFromFormat('H:i', $slotTime);
-                    $slotEnd = Carbon::createFromFormat('H:i', $endTime);
+                    // Get service duration - make sure it's an integer
+                    $bookingDuration = 0;
+                    if ($booking->service) {
+                        $bookingDuration = (int)$booking->service->duration;
+                    }
+
+                    $bookingEnd = (clone $bookingStart)->addMinutes($bookingDuration);
 
                     // Check for overlap
-                    if ($slotStart < $bookingEnd && $slotEnd > $bookingStart) {
+                    if ($slotStartCarbon < $bookingEnd && $slotEndCarbon > $bookingStart) {
                         $available = false;
                         break;
                     }
                 }
 
                 // Check if the slot ends before business hours end
-                if ($endTime > sprintf('%02d:%02d', $endHour, 0)) {
+                $businessEnd = Carbon::createFromFormat('H:i', sprintf('%02d:%02d', $endHour, 0));
+                if ($slotEndCarbon > $businessEnd) {
                     $available = false;
                 }
 
