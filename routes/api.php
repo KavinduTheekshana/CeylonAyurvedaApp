@@ -33,7 +33,6 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::get('/treatments', [TreatmentController::class, 'index']);
 Route::get('/treatments/{id}', [TreatmentController::class, 'show']);
 
-Route::get('/services/{treatmentId}', [ServiceController::class, 'getServicesForTreatment']);
 
 // Time slots
 Route::get('timeslots', [TimeSlotController::class, 'getAvailableSlots']);
@@ -50,3 +49,21 @@ Route::middleware('auth:sanctum')->group(function() {
 // Bookings
 Route::post('bookings', [BookingController::class, 'store']);
 Route::get('bookings/{id}', [BookingController::class, 'show']);
+
+// User bookings (protected)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('user/bookings', [BookingController::class, 'userBookings']);
+});
+
+// Service routes
+Route::get('/services', [ServiceController::class, 'index']);
+Route::get('/services/{treatmentId}', [ServiceController::class, 'getServicesForTreatment']);
+Route::get('/services/detail/{id}', [ServiceController::class, 'detail']);
+
+// Admin only routes
+Route::middleware(['auth:sanctum', 'admin'])->group(function () {
+    // Admin service management
+    Route::post('/services', [ServiceController::class, 'store']);
+    Route::put('/services/{id}', [ServiceController::class, 'update']);
+    Route::delete('/services/{id}', [ServiceController::class, 'destroy']);
+});
