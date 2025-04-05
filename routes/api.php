@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Route;
 
 // Public routes
 Route::post('/register', [UserController::class, 'register']);
+Route::post('/verify-email', [UserController::class, 'verifyEmail']);
+Route::post('/resend-verification', [UserController::class, 'resendVerificationCode']);
 Route::post('/login', [UserController::class, 'login']);
 
 // Protected routes
