@@ -27,6 +27,12 @@ class Booking extends Model
         'status'
     ];
 
+    protected $casts = [
+        'date' => 'date',
+        'time' => 'datetime:H:i:s', // Store as HH:MM:SS
+        'price' => 'decimal:2',
+    ];
+
     public function user()
     {
         return $this->belongsTo(User::class);
@@ -35,5 +41,10 @@ class Booking extends Model
     public function service()
     {
         return $this->belongsTo(Service::class);
+    }
+
+    public function scopeStatus($query, $status)
+    {
+        return $query->where('status', $status);
     }
 }

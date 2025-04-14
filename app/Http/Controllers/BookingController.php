@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\BookingCollection;
+use App\Http\Resources\BookingResource;
 use App\Models\Booking;
 use App\Models\Service;
 use App\Models\Address;
@@ -293,5 +295,38 @@ class BookingController extends Controller
         }
 
         return true; // No overlaps found
+    }
+
+    public function showBooking($id)
+    {
+        $user = Auth::user();
+        $booking = Booking::where('id', $id)
+                          ->where('user_id', $user->id)
+                          ->with('service')
+                          ->first();
+
+        if (!$booking) {
+            return response()->json(['message' => 'Booking not found'], 404);
+        }
+
+        return new BookingResource($booking);
+    }
+
+
+    public function getUserBookingsList()
+    {
+        $user = Auth::user();
+
+        // return $user->name;
+
+        $bookings = Booking::where('user_id', $user->id)
+                           ->with('service') // Include service details
+                           ->orderBy('date', 'desc')
+                           ->orderBy('time', 'desc')
+                        //    ->get();
+                           ->paginate(10);
+
+        // return $bookings;
+        return new BookingCollection($bookings);
     }
 }

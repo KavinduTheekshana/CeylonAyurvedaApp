@@ -17,7 +17,7 @@ class TreatmentResource extends Resource
 {
     protected static ?string $model = Treatment::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-queue-list';
     protected static ?string $navigationLabel = 'Treatments';
     protected static ?string $pluralLabel = 'Treatments';
     protected static ?string $slug = 'treatments';

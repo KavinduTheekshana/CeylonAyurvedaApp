@@ -49,7 +49,8 @@ class TimeSlotController extends Controller
 
                 foreach ($bookings as $booking) {
                     $bookingStartTime = substr($booking->time, 0, 5); // Get HH:MM format
-                    $bookingStart = Carbon::createFromFormat('H:i', $bookingStartTime);
+                    $bookingStart = Carbon::parse($booking->time);
+                    // $bookingStart = Carbon::createFromFormat('H:i', $bookingStartTime);
 
                     // Get service duration - make sure it's an integer
                     $bookingDuration = 0;

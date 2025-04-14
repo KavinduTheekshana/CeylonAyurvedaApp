@@ -47,8 +47,8 @@ class ServiceController extends Controller
 
     public function index()
     {
-        $services = Service::where('active', true)
-            ->orderBy('display_order')
+        $services = Service::where('status', true)
+            ->orderBy('created_at')
             ->get();
 
         return response()->json([

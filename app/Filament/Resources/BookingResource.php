@@ -27,22 +27,25 @@ class BookingResource extends Resource
 {
     protected static ?string $model = Booking::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-calendar-date-range';
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
                 Select::make('user_id')
-                    ->label('User')
-                    // ->options(User::pluck('name', 'id'))
-                    ->searchable()
-                    ->nullable(),
+                ->label('User')
+                ->relationship('user', 'name')
+                ->searchable()
+                ->preload()
+                ->nullable(),
 
-                Select::make('service_id')
-                    ->label('Service')
-                    // ->options(Service::pluck('name', 'id'))
-                    ->required(),
+            Select::make('service_id')
+                ->label('Service')
+                ->relationship('service', 'title')
+                ->searchable()
+                ->preload()
+                ->required(),
 
                 DatePicker::make('date')->required(),
                 TimePicker::make('time')->required(),
@@ -81,7 +84,7 @@ class BookingResource extends Resource
                 TextColumn::make('name')->sortable()->searchable(),
                 TextColumn::make('email')->sortable()->searchable(),
                 TextColumn::make('phone')->sortable(),
-                TextColumn::make('service.name')->label('Service')->sortable(),
+                TextColumn::make('service.title')->label('Service')->sortable(),
                 TextColumn::make('date')->sortable(),
                 TextColumn::make('time')->sortable(),
                 TextColumn::make('status')->sortable()->badge(),
@@ -101,6 +104,9 @@ class BookingResource extends Resource
                     ->label('Registered Users Only')
                     ->trueLabel('Yes')
                     ->falseLabel('Guests Only'),
+            ])
+            ->bulkActions([
+                Tables\Actions\DeleteBulkAction::make(),
             ])
             ->defaultSort('created_at', 'desc');
     }

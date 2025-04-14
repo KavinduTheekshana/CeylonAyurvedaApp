@@ -4,6 +4,7 @@ use App\Http\Controllers\AddressController;
 use App\Http\Controllers\Api\TreatmentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BookingController;
+use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\TimeSlotController;
 use App\Http\Controllers\UserController;
@@ -15,6 +16,12 @@ Route::post('/register', [UserController::class, 'register']);
 Route::post('/verify-email', [UserController::class, 'verifyEmail']);
 Route::post('/resend-verification', [UserController::class, 'resendVerificationCode']);
 Route::post('/login', [UserController::class, 'login']);
+
+// Password Reset Routes
+Route::post('/forgot-password', [PasswordResetController::class, 'forgotPassword']);
+Route::post('/verify-reset-code', [PasswordResetController::class, 'verifyResetCode']);
+Route::post('/reset-password', [PasswordResetController::class, 'resetPassword']);
+Route::post('/resend-reset-code', [PasswordResetController::class, 'resendResetCode']);
 
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -46,6 +53,9 @@ Route::middleware('auth:sanctum')->group(function() {
     Route::put('addresses/{id}', [AddressController::class, 'update']);
     Route::delete('addresses/{id}', [AddressController::class, 'destroy']);
     Route::put('addresses/{id}/make-default', [AddressController::class, 'makeDefault']);
+
+    Route::post('/profile/update', [UserController::class, 'updateProfile']);
+    Route::post('/password/update', [UserController::class, 'updatePassword']);
 });
 
 // Bookings
@@ -68,4 +78,14 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::post('/services', [ServiceController::class, 'store']);
     Route::put('/services/{id}', [ServiceController::class, 'update']);
     Route::delete('/services/{id}', [ServiceController::class, 'destroy']);
+});
+
+
+// Add these to your existing routes/api.php file
+
+Route::middleware('auth:sanctum')->group(function () {
+    // Booking routes
+    Route::get('/auth/bookings/list', [BookingController::class, 'getUserBookingsList']);
+    Route::get('/bookings/show/{id}', [BookingController::class, 'showBooking']);
+    Route::post('/bookings/{id}/cancel', [BookingController::class, 'cancelBooking']);
 });
