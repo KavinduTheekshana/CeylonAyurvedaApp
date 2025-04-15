@@ -77,7 +77,7 @@ class UserController extends Controller
     private function sendVerificationEmail($user, $code)
     {
         // You'll need to create this Mail class
-        Mail::to($user->email)->queue(new VerificationEmail($user, $code));
+        Mail::to($user->email)->send(new VerificationEmail($user, $code));
     }
 
     public function verifyEmail(Request $request)
