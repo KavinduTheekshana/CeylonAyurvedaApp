@@ -39,7 +39,8 @@ class ServiceResource extends Resource
                 FileUpload::make('image')
                     ->directory('services') // Store images in storage/app/public/services
                     ->image()
-                    ->label('Service Image'),
+                    ->label('Service Image')
+                    ->required(),
                 TextInput::make('title')->required()->label('Title'),
                 TextInput::make('subtitle')->label('Subtitle'),
                 TextInput::make('price')->numeric()->label('Price'),
