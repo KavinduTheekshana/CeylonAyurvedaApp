@@ -46,7 +46,7 @@ class ServiceResource extends Resource
                 TextInput::make('duration')->numeric()->label('Time Duration (Minutes)'),
                 Textarea::make('benefits')->label('Benefits'),
                 Textarea::make('description')->label('Description'),
-                Toggle::make('status')->label('Active'),
+                Toggle::make('status')->label('Active')->default(true),
             ]);
     }
 
