@@ -271,6 +271,76 @@ class BookingController extends Controller
         }
     }
 
+    public function cancelBooking(Request $request, $id)
+    {
+        try {
+            // Find the booking
+            $booking = Booking::findOrFail($id);
+
+            // If user is authenticated, check if booking belongs to user
+            if (Auth::check()) {
+                $user = Auth::user();
+
+                // Check if the booking belongs to the authenticated user
+                if ($booking->user_id && $booking->user_id != $user->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You are not authorized to cancel this booking'
+                    ], 403);
+                }
+            } else {
+                // For future implementation: handle guest cancellations via token or email verification
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Authentication required to cancel bookings'
+                ], 401);
+            }
+
+            // Check if booking is in a cancellable state
+            $cancellableStatuses = ['confirmed', 'pending'];
+            if (!in_array($booking->status, $cancellableStatuses)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This booking cannot be cancelled in its current state'
+                ], 400);
+            }
+
+            // Perform cancellation
+            $booking->status = 'cancelled';
+            $booking->save();
+
+            // Log the cancellation
+            Log::info('Booking cancelled', [
+                'booking_id' => $booking->id,
+                'user_id' => Auth::id() ?? 'guest',
+                'reference' => $booking->reference
+            ]);
+
+            // Return success response with plain structure for better iOS compatibility
+            return response()->json([
+                'success' => true,
+                'message' => 'Booking cancelled successfully',
+                'data' => [
+                    'id' => $booking->id,
+                    'status' => 'cancelled',
+                    'can_cancel' => false
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error cancelling booking', [
+                'error' => $e->getMessage(),
+                'booking_id' => $id
+            ]);
+
+            // Return error response with simpler structure for better iOS compatibility
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to cancel booking: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     private function checkSlotAvailability($date, $time, $duration)
     {
         // Convert the requested time to carbon instance
@@ -301,9 +371,9 @@ class BookingController extends Controller
     {
         $user = Auth::user();
         $booking = Booking::where('id', $id)
-                          ->where('user_id', $user->id)
-                          ->with('service')
-                          ->first();
+            ->where('user_id', $user->id)
+            ->with('service')
+            ->first();
 
         if (!$booking) {
             return response()->json(['message' => 'Booking not found'], 404);
@@ -320,11 +390,11 @@ class BookingController extends Controller
         // return $user->name;
 
         $bookings = Booking::where('user_id', $user->id)
-                           ->with('service') // Include service details
-                           ->orderBy('date', 'desc')
-                           ->orderBy('time', 'desc')
-                        //    ->get();
-                           ->paginate(10);
+            ->with('service') // Include service details
+            ->orderBy('date', 'desc')
+            ->orderBy('time', 'desc')
+            //    ->get();
+            ->paginate(10);
 
         // return $bookings;
         return new BookingCollection($bookings);

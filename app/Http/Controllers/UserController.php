@@ -193,7 +193,7 @@ class UserController extends Controller
             $user->save();
 
             // Send verification email
-            $this->sendVerificationEmail($user, $verificationCode);
+            // $this->sendVerificationEmail($user, $verificationCode);
 
             // Return response indicating verification needed
             return response()->json([

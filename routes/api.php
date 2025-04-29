@@ -4,6 +4,7 @@ use App\Http\Controllers\AddressController;
 use App\Http\Controllers\Api\TreatmentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BookingController;
+use App\Http\Controllers\DeleteAccountController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\TimeSlotController;
@@ -88,4 +89,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/bookings/list', [BookingController::class, 'getUserBookingsList']);
     Route::get('/bookings/show/{id}', [BookingController::class, 'showBooking']);
     Route::post('/bookings/{id}/cancel', [BookingController::class, 'cancelBooking']);
+
+    // Delete account route
+    Route::post('/account/delete', [DeleteAccountController::class, 'deleteAccount']);
 });

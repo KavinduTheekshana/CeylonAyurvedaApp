@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 use App\Mail\PasswordResetMail;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class PasswordResetController extends Controller
@@ -58,6 +59,8 @@ class PasswordResetController extends Controller
         // Send email with OTP
         try {
             Mail::to($email)->send(new PasswordResetMail($otp));
+            // Log::info('Password reset code sent to: ' . $otp);
+            // dump('Password reset code sent to: ' . $otp);
 
             return response()->json([
                 'success' => true,
@@ -214,7 +217,9 @@ class PasswordResetController extends Controller
         try {
             Mail::to($email)->send(new PasswordResetMail($otp));
 
+
             return response()->json([
+                // 'code' => $otp,
                 'success' => true,
                 'message' => 'Password reset code resent to your email'
             ]);

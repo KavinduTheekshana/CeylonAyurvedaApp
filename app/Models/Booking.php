@@ -47,4 +47,25 @@ class Booking extends Model
     {
         return $query->where('status', $status);
     }
+
+    public function canBeCancelled(): bool
+    {
+        $cancellableStatuses = ['confirmed', 'pending'];
+        return in_array($this->status, $cancellableStatuses);
+    }
+
+    public function getFormattedDateAttribute(): string
+    {
+        return $this->date->format('l, F j, Y');
+    }
+
+    public function getFormattedTimeAttribute(): string
+    {
+        return date('g:i A', strtotime($this->time));
+    }
+
+    public function getCanCancelAttribute(): bool
+    {
+        return $this->canBeCancelled();
+    }
 }
