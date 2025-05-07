@@ -4,39 +4,47 @@ namespace App\Mail;
 
 use App\Models\Booking;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 class BookingConfirmation extends Mailable
 {
     use Queueable, SerializesModels;
 
+    /**
+     * The booking instance.
+     *
+     * @var \App\Models\Booking
+     */
     public $booking;
 
+    /**
+     * The service instance.
+     *
+     * @var \App\Models\Service
+     */
+    public $service;
+
+    /**
+     * Create a new message instance.
+     *
+     * @param  \App\Models\Booking  $booking
+     * @return void
+     */
     public function __construct(Booking $booking)
     {
         $this->booking = $booking;
+        $this->service = $booking->service;
     }
 
-    public function envelope()
+    /**
+     * Build the message.
+     *
+     * @return $this
+     */
+    public function build()
     {
-        return new Envelope(
-            subject: 'Booking Confirmation: ' . $this->booking->reference,
-        );
-    }
-
-    public function content()
-    {
-        return new Content(
-            view: 'emails.booking-confirmation',
-        );
-    }
-
-    public function attachments()
-    {
-        return [];
+        return $this->subject('Booking Confirmation: ' . $this->booking->reference)
+                    ->view('emails.booking-confirmation');
     }
 }

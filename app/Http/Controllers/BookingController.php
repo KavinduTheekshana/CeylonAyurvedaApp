@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
+use App\Mail\BookingConfirmation;
 
 class BookingController extends Controller
 {
@@ -25,7 +26,7 @@ class BookingController extends Controller
             'authorization' => $request->header('Authorization'),
             'content_type' => $request->header('Content-Type')
         ]);
-
+        
         // Validate the booking data - directly accepting address fields or nested object
         $validator = Validator::make($request->all(), [
             'service_id' => 'required|exists:services,id',
@@ -34,24 +35,21 @@ class BookingController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|email|max:255',
             'phone' => 'required|string|max:20',
-
             // Direct address fields
             'address_line1' => 'required_without:address|string|max:255',
             'address_line2' => 'nullable|string|max:255',
             'city' => 'required_without:address|string|max:100',
             'postcode' => 'required_without:address|string|max:20',
-
             // Or nested address object
             'address' => 'required_without_all:address_line1,city,postcode|array',
             'address.address_line1' => 'required_with:address|string|max:255',
             'address.address_line2' => 'nullable|string|max:255',
             'address.city' => 'required_with:address|string|max:100',
             'address.postcode' => 'required_with:address|string|max:20',
-
             'notes' => 'nullable|string',
             'save_address' => 'boolean'
         ]);
-
+        
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -59,20 +57,19 @@ class BookingController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
-
+        
         // IMPORTANT FIX: Get user if authenticated - use auth()->user() as an alternative
         $user = auth()->user();
-
+        
         // Debug user authentication status
         Log::info('User authentication check', [
             'is_authenticated' => $user ? 'Yes' : 'No',
             'user_id' => $user ? $user->id : 'Not authenticated'
         ]);
-
+        
         // If user is not authenticated but token is provided, try to get user from token directly
         if (!$user && $request->bearerToken()) {
             Log::info('Attempting to get user from token directly');
-
             // Try to get the user from the token using Sanctum's methods
             try {
                 // For Sanctum
@@ -85,7 +82,7 @@ class BookingController extends Controller
                 Log::error('Error retrieving user from token: ' . $e->getMessage());
             }
         }
-
+        
         // Check service availability
         $service = Service::find($request->service_id);
         if (!$service) {
@@ -94,22 +91,22 @@ class BookingController extends Controller
                 'message' => 'Service not found'
             ], 404);
         }
-
+        
         // Handle address fields (either directly or from nested object)
         $addressLine1 = $request->address_line1 ?? $request->input('address.address_line1', '');
         $addressLine2 = $request->address_line2 ?? $request->input('address.address_line2', '');
         $city = $request->city ?? $request->input('address.city', '');
         $postcode = $request->postcode ?? $request->input('address.postcode', '');
-
+        
         // Save address if requested and user is logged in
         // Fix: Properly check for save_address as a boolean value (could be true, false, 1, 0, "true", "false")
         $saveAddress = filter_var($request->input('save_address', false), FILTER_VALIDATE_BOOLEAN);
-
+        
         Log::info('Save address check', [
             'save_address' => $saveAddress,
             'user_present' => $user ? 'Yes' : 'No'
         ]);
-
+        
         if ($user && $saveAddress) {
             // First check if this exact address already exists for the user
             $existingAddress = Address::where('user_id', $user->id)
@@ -117,7 +114,7 @@ class BookingController extends Controller
                 ->where('city', $city)
                 ->where('postcode', $postcode)
                 ->first();
-
+                
             if (!$existingAddress) {
                 $addressData = [
                     'user_id' => $user->id,
@@ -130,19 +127,16 @@ class BookingController extends Controller
                     'postcode' => $postcode,
                     'is_default' => false // Default to not default
                 ];
-
+                
                 // Check if it's the user's first address
                 $isFirstAddress = Address::where('user_id', $user->id)->count() === 0;
-
                 if ($isFirstAddress) {
                     $addressData['is_default'] = true;
                 }
-
+                
                 Log::info('Creating new address', $addressData);
-
                 // Create the address
                 $address = Address::create($addressData);
-
                 // Log the address creation for debugging
                 Log::info('Address created', ['address_id' => $address->id, 'user_id' => $user->id]);
             } else {
@@ -156,15 +150,14 @@ class BookingController extends Controller
                 Log::info('Address not saved - save_address flag is false', ['save_address_value' => $request->input('save_address')]);
             }
         }
-
+        
         // Create a unique reference
         $reference = strtoupper(Str::random(8));
-
         // Ensure reference is unique
         while (Booking::where('reference', $reference)->exists()) {
             $reference = strtoupper(Str::random(8));
         }
-
+        
         // Create the booking with direct address fields
         $booking = new Booking();
         $booking->service_id = $request->service_id;
@@ -183,7 +176,29 @@ class BookingController extends Controller
         $booking->price = $service->price;
         $booking->reference = $reference;
         $booking->save();
-
+        
+        // Send confirmation email to the customer
+        try {
+            Mail::to($booking->email)->send(new BookingConfirmation($booking));
+            
+            // Optionally, send a notification to the admin
+            // $adminEmail = config('mail.admin_address', 'admin@example.com');
+            // Mail::to($adminEmail)->send(new AdminBookingNotification($booking));
+            
+            // Log email sent
+            Log::info('Booking confirmation emails sent', [
+                'booking_id' => $booking->id, 
+                'customer_email' => $booking->email,
+                // 'admin_email' => $adminEmail
+            ]);
+        } catch (\Exception $e) {
+            // Log error but don't fail the booking process
+            Log::error('Failed to send booking confirmation email', [
+                'booking_id' => $booking->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
         return response()->json([
             'success' => true,
             'message' => 'Booking created successfully',
@@ -326,7 +341,6 @@ class BookingController extends Controller
                     'can_cancel' => false
                 ]
             ]);
-
         } catch (\Exception $e) {
             Log::error('Error cancelling booking', [
                 'error' => $e->getMessage(),
