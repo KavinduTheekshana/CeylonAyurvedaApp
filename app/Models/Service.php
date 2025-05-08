@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Service extends Model
 {
@@ -29,5 +30,10 @@ class Service extends Model
     public function bookings()
     {
         return $this->hasMany(Booking::class);
+    }
+
+    public function therapists(): BelongsToMany
+    {
+        return $this->belongsToMany(Therapist::class, 'therapist_service');
     }
 }
