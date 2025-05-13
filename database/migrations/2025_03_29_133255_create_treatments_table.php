@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('image'); // Image
             $table->boolean('status')->default(1); // Active or Inactive
             $table->text('description')->nullable(); // Small Description
+            $table->boolean('offers')->default(false);
             $table->timestamps();
         });
     }

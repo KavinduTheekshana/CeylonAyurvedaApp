@@ -43,6 +43,10 @@ class TreatmentResource extends Resource
                 Forms\Components\Toggle::make('status')
                     ->label('Status')
                     ->default(true),
+
+                    Forms\Components\Toggle::make('offers')
+                    ->label('Offers')
+                    ->default(false),
             ]);
     }
 
@@ -63,6 +67,9 @@ class TreatmentResource extends Resource
 
                 Tables\Columns\IconColumn::make('status')
                     ->label('Status')
+                    ->boolean(),
+                    Tables\Columns\IconColumn::make('offers')
+                    ->label('Offers')
                     ->boolean(),
             ])
             ->filters([])

@@ -9,5 +9,5 @@ class Treatment extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'image', 'status', 'description'];
+    protected $fillable = ['name', 'image', 'status', 'description','offers'];
 }
