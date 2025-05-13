@@ -71,6 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
 // Service routes
 Route::get('/services', [ServiceController::class, 'index']);
 Route::get('/services/{treatmentId}', [ServiceController::class, 'getServicesForTreatment']);
+Route::get('/services/detail/{serviceId}/with-bookings', [ServiceController::class, 'getServiceWithBookingCount']);
 Route::get('/services/detail/{id}', [ServiceController::class, 'detail']);
 
 // Admin only routes

@@ -6,6 +6,7 @@ use App\Models\Service;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use App\Models\Booking;
 
 class ServiceController extends Controller
 {
@@ -27,6 +28,33 @@ class ServiceController extends Controller
             'data' => $services
         ], 200);
     }
+
+    public function getServiceWithBookingCount($serviceId)
+{
+    // Find the service
+    $service = Service::with('treatment')->find($serviceId);
+    
+    if (!$service) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Service not found.'
+        ], 404);
+    }
+    
+    // Get booking count
+    $bookingCount = Booking::where('service_id', $serviceId)
+        ->where('status', '!=', 'cancelled')
+        ->count();
+    
+    // Include the booking count with the service data
+    $serviceData = $service->toArray();
+    $serviceData['booking_count'] = $bookingCount;
+    
+    return response()->json([
+        'success' => true,
+        'data' => $serviceData
+    ], 200);
+}
 
     public function detail($id)
     {
