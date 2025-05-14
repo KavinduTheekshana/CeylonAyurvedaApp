@@ -44,6 +44,7 @@ class ServiceResource extends Resource
                 TextInput::make('title')->required()->label('Title'),
                 TextInput::make('subtitle')->label('Subtitle'),
                 TextInput::make('price')->numeric()->label('Price'),
+                TextInput::make('discount_price')->numeric()->label('Discount Price'),
                 TextInput::make('duration')->numeric()->label('Time Duration (Minutes)'),
                 Textarea::make('benefits')->label('Benefits'),
                 Textarea::make('description')->label('Description'),
@@ -60,6 +61,7 @@ class ServiceResource extends Resource
                 TextColumn::make('title')->label('Title')->sortable()->searchable(),
                 TextColumn::make('subtitle')->label('Subtitle')->sortable(),
                 TextColumn::make('price')->label('Price')->sortable(),
+                TextColumn::make('discount_price')->label('Discount Price')->sortable(),
                 TextColumn::make('duration')->label('Duration (Min)')->sortable(),
                 BooleanColumn::make('status')->label('Active'),
             ])

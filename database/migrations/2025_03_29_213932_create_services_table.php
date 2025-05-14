@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('image'); // Image
             $table->string('subtitle')->nullable(); // Subtitle
             $table->decimal('price', 8, 2)->nullable(); // Price
+            $table->decimal('discount_price', 8, 2)->nullable(); // Price
             $table->integer('duration')->nullable(); // Time Duration (minutes)
             $table->text('benefits')->nullable(); // Benefits
             $table->text('description')->nullable(); // Description
