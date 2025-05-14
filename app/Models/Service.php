@@ -15,6 +15,7 @@ class Service extends Model
         'title',
         'subtitle',
         'price',
+        'discount_price',
         'duration',
         'benefits',
         'description',
