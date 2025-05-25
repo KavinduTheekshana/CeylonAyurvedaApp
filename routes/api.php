@@ -7,6 +7,7 @@ use App\Http\Controllers\BookingController;
 use App\Http\Controllers\DeleteAccountController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\ServiceController;
+use App\Http\Controllers\TherapistController;
 use App\Http\Controllers\TimeSlotController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
@@ -83,6 +84,7 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
 });
 
 
+Route::get('/services/{serviceId}/therapists', [TherapistController::class, 'getServiceTherapists']);
 // Add these to your existing routes/api.php file
 
 Route::middleware('auth:sanctum')->group(function () {
@@ -93,4 +95,5 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Delete account route
     Route::post('/account/delete', [DeleteAccountController::class, 'deleteAccount']);
+
 });

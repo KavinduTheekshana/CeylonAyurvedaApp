@@ -31,6 +31,7 @@ return new class extends Migration
 
             $table->foreign('user_id')->references('id')->on('users');
             $table->foreign('service_id')->references('id')->on('services');
+            $table->foreignId('therapist_id')->nullable()->constrained()->onDelete('set null');
             $table->timestamps();
         });
     }

@@ -18,6 +18,7 @@ class TreatmentResource extends Resource
     protected static ?string $model = Treatment::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-queue-list';
+    protected static ?string $navigationGroup = 'Treatment Management';
     protected static ?string $navigationLabel = 'Treatments';
     protected static ?string $pluralLabel = 'Treatments';
     protected static ?string $slug = 'treatments';
@@ -44,7 +45,7 @@ class TreatmentResource extends Resource
                     ->label('Status')
                     ->default(true),
 
-                    Forms\Components\Toggle::make('offers')
+                Forms\Components\Toggle::make('offers')
                     ->label('Offers')
                     ->default(false),
             ]);
@@ -68,7 +69,7 @@ class TreatmentResource extends Resource
                 Tables\Columns\IconColumn::make('status')
                     ->label('Status')
                     ->boolean(),
-                    Tables\Columns\IconColumn::make('offers')
+                Tables\Columns\IconColumn::make('offers')
                     ->label('Offers')
                     ->boolean(),
             ])

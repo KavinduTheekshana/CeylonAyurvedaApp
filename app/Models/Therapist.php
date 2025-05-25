@@ -22,21 +22,51 @@ class Therapist extends Model
 
     protected $casts = [
         'status' => 'boolean',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     /**
      * Get the services that this therapist can perform.
      */
-    public function services(): BelongsToMany
-    {
-        return $this->belongsToMany(Service::class)->withTimestamps();
-    }
+    // public function services(): BelongsToMany
+    // {
+    //     return $this->belongsToMany(Service::class)->withTimestamps();
+    // }
 
     /**
      * Get the bookings for this therapist.
      */
-    public function bookings(): HasMany
+   
+
+    public function bookings()
     {
         return $this->hasMany(Booking::class);
+    }
+
+    public function services()
+    {
+        return $this->belongsToMany(
+            Service::class,
+            'service_therapist', // Specify the correct table name
+            'therapist_id',      // Foreign key for therapist
+            'service_id'         // Foreign key for service
+        )->withTimestamps();
+    }
+
+    public function getImageUrlAttribute()
+    {
+        if ($this->image) {
+            return asset('storage/' . $this->image);
+        }
+        return null;
+    }
+
+    /**
+     * Scope for active therapists
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('status', true);
     }
 }

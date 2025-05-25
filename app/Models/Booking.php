@@ -22,6 +22,7 @@ class Booking extends Model
         'address_line2',
         'city',
         'postcode',
+        'therapist_id',
         'notes',
         'price',
         'reference',
