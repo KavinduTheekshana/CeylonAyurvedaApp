@@ -24,10 +24,54 @@ class UserController extends Controller
      */
     public function register(Request $request)
     {
+        // Validate the request data
+        $validator = Validator::make($request->all(), [
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            'password' => [
+                'required',
+                Password::min(8)
+                    ->mixedCase()
+                    ->letters()
+                    ->numbers()
+                    ->symbols()
+            ],
+        ]);
+
+        // If validation fails, return error response
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Generate verification code (6 digits)
+        $verificationCode = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+        // Create the user
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'verification_code' => $verificationCode,
+            'email_verified_at' => null
+        ]);
+
+        // Send verification email
+        $this->sendVerificationEmail($user, $verificationCode);
+
+        // Generate access token
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        // Return success response with token
         return response()->json([
-            'message' => 'This endpoint is deprecated. Please use the new registration endpoint.',
-            'new_endpoint' => '/api/patient/register'
-        ], 410);
+            'message' => 'User registered successfully. Please verify your email.',
+            'user' => $user,
+            'access_token' => $token,
+            'token_type' => 'Bearer',
+            'requires_verification' => true
+        ], 201);
     }
 
     private function sendVerificationEmail($user, $code)
