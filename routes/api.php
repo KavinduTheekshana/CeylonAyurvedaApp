@@ -14,7 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // Public routes
-Route::post('/register', [UserController::class, 'register']);
+// Route::post('/register', [UserController::class, 'register']);
 Route::post('/verify-email', [UserController::class, 'verifyEmail']);
 Route::post('/resend-verification', [UserController::class, 'resendVerificationCode']);
 Route::post('/login', [UserController::class, 'login']);
@@ -39,7 +39,7 @@ Route::middleware('auth:sanctum')->group(function () {
 //     return $request->user();
 // })->middleware('auth:sanctum');
 
-// Route::post('/register', [AuthController::class, 'register'])->name('register');
+Route::post('/register', [AuthController::class, 'register'])->name('register');
 
 Route::get('/treatments', [TreatmentController::class, 'index']);
 Route::get('/treatments/{id}', [TreatmentController::class, 'show']);
