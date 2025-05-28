@@ -29,29 +29,75 @@ class Therapist extends Model
     /**
      * Get the services that this therapist can perform.
      */
-    // public function services(): BelongsToMany
-    // {
-    //     return $this->belongsToMany(Service::class)->withTimestamps();
-    // }
+    public function services()
+    {
+        return $this->belongsToMany(
+            Service::class,
+            'service_therapist',
+            'therapist_id',
+            'service_id'
+        )->withTimestamps();
+    }
 
     /**
      * Get the bookings for this therapist.
      */
-   
-
     public function bookings()
     {
         return $this->hasMany(Booking::class);
     }
 
-    public function services()
+    /**
+     * Get the availability schedules for this therapist.
+     */
+    public function availabilities(): HasMany
     {
-        return $this->belongsToMany(
-            Service::class,
-            'service_therapist', // Specify the correct table name
-            'therapist_id',      // Foreign key for therapist
-            'service_id'         // Foreign key for service
-        )->withTimestamps();
+        return $this->hasMany(TherapistAvailability::class);
+    }
+
+    /**
+     * Get active availability schedules for this therapist.
+     */
+    public function activeAvailabilities(): HasMany
+    {
+        return $this->hasMany(TherapistAvailability::class)->where('is_active', true);
+    }
+
+    /**
+     * Get availability for a specific day
+     */
+    public function getAvailabilityForDay($day): \Illuminate\Database\Eloquent\Collection
+    {
+        return $this->activeAvailabilities()
+            ->where('day_of_week', strtolower($day))
+            ->orderBy('start_time')
+            ->get();
+    }
+
+    /**
+     * Check if therapist is available on a specific day and time
+     */
+    public function isAvailableAt($dayOfWeek, $time): bool
+    {
+        return $this->activeAvailabilities()
+            ->where('day_of_week', strtolower($dayOfWeek))
+            ->where('start_time', '<=', $time)
+            ->where('end_time', '>', $time)
+            ->exists();
+    }
+
+    /**
+     * Get all available days for this therapist
+     */
+    public function getAvailableDays(): array
+    {
+        return $this->activeAvailabilities()
+            ->distinct('day_of_week')
+            ->pluck('day_of_week')
+            ->map(function ($day) {
+                return ucfirst($day);
+            })
+            ->toArray();
     }
 
     public function getImageUrlAttribute()

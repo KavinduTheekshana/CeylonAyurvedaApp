@@ -3,7 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\TherapistResource\Pages;
-use App\Filament\Resources\TherapistResource\RelationManagers;
+use App\Filament\Resources\TherapistResource\RelationManagers\AvailabilitiesRelationManager;
 use App\Models\Therapist;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
@@ -96,6 +96,27 @@ class TherapistResource extends Resource
                     ->color('primary')
                     ->searchable()
                     ->sortable(),
+
+                TextColumn::make('availabilities_count')
+                    ->label('Availability Slots')
+                    ->counts('availabilities')
+                    ->badge()
+                    ->color('success'),
+
+                TextColumn::make('available_days')
+                    ->label('Available Days')
+                    ->state(function (Therapist $record): string {
+                        $days = $record->availabilities()
+                            ->where('is_active', true)
+                            ->distinct('day_of_week')
+                            ->pluck('day_of_week')
+                            ->map(fn($day) => substr(ucfirst($day), 0, 3))
+                            ->toArray();
+                        
+                        return implode(', ', $days);
+                    })
+                    ->badge()
+                    ->color('info'),
                     
                 BooleanColumn::make('status')
                     ->label('Active'),
@@ -126,7 +147,7 @@ class TherapistResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            AvailabilitiesRelationManager::class,
         ];
     }
     

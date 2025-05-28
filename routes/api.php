@@ -31,22 +31,28 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
-
-    // Add other protected routes here
 });
 
-// Route::get('/user', function (Request $request) {
-//     return $request->user();
-// })->middleware('auth:sanctum');
-
-// Route::post('/register', [AuthController::class, 'register'])->name('register');
-
+// Treatment routes
 Route::get('/treatments', [TreatmentController::class, 'index']);
 Route::get('/treatments/{id}', [TreatmentController::class, 'show']);
 
+// Service routes
+Route::get('/services', [ServiceController::class, 'index']);
+Route::get('/services/{treatmentId}', [ServiceController::class, 'getServicesForTreatment']);
+Route::get('/services/detail/{serviceId}/with-bookings', [ServiceController::class, 'getServiceWithBookingCount']);
+Route::get('/services/detail/{id}', [ServiceController::class, 'detail']);
 
-// Time slots
+// Therapist routes
+Route::get('/services/{serviceId}/therapists', [TherapistController::class, 'getServiceTherapists']);
+
+// Time slots and availability routes
 Route::get('timeslots', [TimeSlotController::class, 'getAvailableSlots']);
+Route::get('therapists/available', [TimeSlotController::class, 'getAvailableTherapists']);
+Route::get('therapists/{therapistId}/available-dates', [TimeSlotController::class, 'getAvailableDates']);
+Route::get('therapists/{therapistId}/schedule', [TimeSlotController::class, 'getTherapistSchedule']);
+Route::post('timeslots/check-availability', [TimeSlotController::class, 'checkSlotAvailability']);
+Route::get('therapists/{therapistId}/workload', [TimeSlotController::class, 'getTherapistWorkload']);
 
 // User addresses
 Route::middleware('auth:sanctum')->group(function() {
@@ -67,13 +73,13 @@ Route::get('bookings/{id}', [BookingController::class, 'show']);
 // User bookings (protected)
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('user/bookings', [BookingController::class, 'userBookings']);
-});
+    Route::get('/auth/bookings/list', [BookingController::class, 'getUserBookingsList']);
+    Route::get('/bookings/show/{id}', [BookingController::class, 'showBooking']);
+    Route::post('/bookings/{id}/cancel', [BookingController::class, 'cancelBooking']);
 
-// Service routes
-Route::get('/services', [ServiceController::class, 'index']);
-Route::get('/services/{treatmentId}', [ServiceController::class, 'getServicesForTreatment']);
-Route::get('/services/detail/{serviceId}/with-bookings', [ServiceController::class, 'getServiceWithBookingCount']);
-Route::get('/services/detail/{id}', [ServiceController::class, 'detail']);
+    // Delete account route
+    Route::post('/account/delete', [DeleteAccountController::class, 'deleteAccount']);
+});
 
 // Admin only routes
 Route::middleware(['auth:sanctum', 'admin'])->group(function () {
@@ -83,17 +89,5 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::delete('/services/{id}', [ServiceController::class, 'destroy']);
 });
 
-
-Route::get('/services/{serviceId}/therapists', [TherapistController::class, 'getServiceTherapists']);
-// Add these to your existing routes/api.php file
-
-Route::middleware('auth:sanctum')->group(function () {
-    // Booking routes
-    Route::get('/auth/bookings/list', [BookingController::class, 'getUserBookingsList']);
-    Route::get('/bookings/show/{id}', [BookingController::class, 'showBooking']);
-    Route::post('/bookings/{id}/cancel', [BookingController::class, 'cancelBooking']);
-
-    // Delete account route
-    Route::post('/account/delete', [DeleteAccountController::class, 'deleteAccount']);
-
-});
+// Add this route to your existing routes
+Route::get('therapists/{therapistId}/available-dates', [TimeSlotController::class, 'getAvailableDates']);
