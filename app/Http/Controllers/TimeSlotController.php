@@ -2,17 +2,22 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Booking;
 use App\Models\Service;
 use App\Models\Therapist;
 use App\Models\TherapistAvailability;
+use App\Models\Booking;
 use Illuminate\Http\Request;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
-class TimeSlotController extends Controller
+class TherapistController extends Controller
 {
-
+    /**
+     * Get therapists assigned to a specific service
+     * Public endpoint for booking flow
+     */
     public function getServiceTherapists($serviceId)
     {
         try {
@@ -29,11 +34,11 @@ class TimeSlotController extends Controller
                 ], 404);
             }
 
-            // Try to get therapists with proper relationship and their availability
+            // Get therapists with proper relationship and their availability
             $therapists = $service->therapists()
                 ->where('status', true)
                 ->with(['availabilities' => function($query) {
-                    $query->where('is_active', true)->orderBy('day_of_week');
+                    $query->where('is_active', true)->orderBy('day_of_week')->orderBy('start_time');
                 }])
                 ->orderBy('name')
                 ->get();
@@ -42,8 +47,23 @@ class TimeSlotController extends Controller
 
             // Format therapist data with availability information
             $therapistData = $therapists->map(function($therapist) {
-                // Get available days for the next 3 months
+                // Get available dates for the next 3 months
                 $availableDates = $this->getTherapistAvailableDates($therapist->id, 3);
+                
+                // Count available slots for today
+                $todaySlots = $this->countAvailableSlotsToday($therapist->id);
+                
+                // Format schedule data
+                $schedule = $therapist->availabilities->map(function($availability) {
+                    return [
+                        'day_of_week' => $availability->day_of_week,
+                        'start_time' => $availability->start_time->format('H:i'),
+                        'end_time' => $availability->end_time->format('H:i'),
+                        'is_active' => $availability->is_active,
+                    ];
+                });
+
+                Log::info("Therapist {$therapist->name} - Available dates: " . count($availableDates) . ", Today slots: {$todaySlots}, Schedule items: " . $schedule->count());
                 
                 return [
                     'id' => $therapist->id,
@@ -53,16 +73,9 @@ class TimeSlotController extends Controller
                     'image' => $therapist->image ? url('storage/' . $therapist->image) : null,
                     'bio' => $therapist->bio,
                     'status' => $therapist->status,
-                    'available_slots_count' => $this->countAvailableSlotsToday($therapist->id),
+                    'available_slots_count' => $todaySlots,
                     'available_dates_count' => count($availableDates),
-                    'schedule' => $therapist->availabilities->map(function($availability) {
-                        return [
-                            'day_of_week' => $availability->day_of_week,
-                            'start_time' => $availability->start_time->format('H:i'),
-                            'end_time' => $availability->end_time->format('H:i'),
-                            'is_active' => $availability->is_active,
-                        ];
-                    })
+                    'schedule' => $schedule
                 ];
             });
 
@@ -85,18 +98,25 @@ class TimeSlotController extends Controller
 
     /**
      * Get available dates for a specific therapist
+     * MOVED FROM TimeSlotController to fix the issue
      */
-    public function getTherapistAvailableDates($therapistId, $months = 3)
+    private function getTherapistAvailableDates($therapistId, $months = 3)
     {
         try {
-            $therapist = Therapist::with('activeAvailabilities')->find($therapistId);
+            // Use the same method as TimeSlotController but with proper relationship loading
+            $therapist = Therapist::with(['availabilities' => function($query) {
+                $query->where('is_active', true);
+            }])->find($therapistId);
             
-            if (!$therapist || $therapist->activeAvailabilities->isEmpty()) {
+            if (!$therapist || $therapist->availabilities->isEmpty()) {
+                Log::info("No availability found for therapist {$therapistId}");
                 return [];
             }
 
             // Get the days of the week when therapist is available
-            $availableDaysOfWeek = $therapist->activeAvailabilities->pluck('day_of_week')->unique()->toArray();
+            $availableDaysOfWeek = $therapist->availabilities->pluck('day_of_week')->unique()->toArray();
+            
+            Log::info("Therapist {$therapistId} available days: " . implode(', ', $availableDaysOfWeek));
             
             // Generate available dates for the next X months
             $availableDates = [];
@@ -115,6 +135,7 @@ class TimeSlotController extends Controller
                 $currentDate->addDay();
             }
 
+            Log::info("Generated " . count($availableDates) . " available dates for therapist {$therapistId}");
             return $availableDates;
 
         } catch (\Exception $e) {
@@ -125,65 +146,83 @@ class TimeSlotController extends Controller
 
     /**
      * Count available slots for today
+     * MOVED FROM TimeSlotController to fix the issue
      */
     private function countAvailableSlotsToday($therapistId)
     {
-        $today = Carbon::today()->toDateString();
-        $dayOfWeek = strtolower(Carbon::today()->format('l'));
-        
-        // Get therapist availability for today
-        $availabilities = TherapistAvailability::where('therapist_id', $therapistId)
-            ->where('day_of_week', $dayOfWeek)
-            ->where('is_active', true)
-            ->get();
+        try {
+            $today = Carbon::today()->toDateString();
+            $dayOfWeek = strtolower(Carbon::today()->format('l'));
+            
+            Log::info("Checking slots for therapist {$therapistId} on {$today} ({$dayOfWeek})");
+            
+            // Get therapist availability for today
+            $availabilities = TherapistAvailability::where('therapist_id', $therapistId)
+                ->where('day_of_week', $dayOfWeek)
+                ->where('is_active', true)
+                ->get();
 
-        if ($availabilities->isEmpty()) {
+            if ($availabilities->isEmpty()) {
+                Log::info("No availability for therapist {$therapistId} on {$dayOfWeek}");
+                return 0;
+            }
+
+            Log::info("Found " . $availabilities->count() . " availability slots for therapist {$therapistId} on {$dayOfWeek}");
+
+            // Get existing bookings for today
+            $existingBookings = Booking::where('therapist_id', $therapistId)
+                ->where('date', $today)
+                ->whereIn('status', ['confirmed', 'pending'])
+                ->with('service')
+                ->get();
+
+            Log::info("Found " . $existingBookings->count() . " existing bookings for therapist {$therapistId} on {$today}");
+
+            $totalSlots = 0;
+            $intervalMinutes = 30;
+            $defaultDuration = 60;
+
+            foreach ($availabilities as $availability) {
+                $startTime = Carbon::parse($availability->start_time);
+                $endTime = Carbon::parse($availability->end_time);
+                $currentTime = $startTime->copy();
+
+                Log::info("Processing availability slot: {$startTime->format('H:i')} - {$endTime->format('H:i')}");
+
+                while ($currentTime->copy()->addMinutes($defaultDuration)->lte($endTime)) {
+                    $slotEndTime = $currentTime->copy()->addMinutes($defaultDuration);
+                    $available = true;
+
+                    foreach ($existingBookings as $booking) {
+                        $bookingStart = Carbon::parse($booking->time);
+                        $bookingDuration = $booking->service ? (int)$booking->service->duration : 60;
+                        $bookingEnd = $bookingStart->copy()->addMinutes($bookingDuration);
+
+                        if ($currentTime->lt($bookingEnd) && $slotEndTime->gt($bookingStart)) {
+                            $available = false;
+                            break;
+                        }
+                    }
+
+                    if ($available) {
+                        $totalSlots++;
+                    }
+
+                    $currentTime->addMinutes($intervalMinutes);
+                }
+            }
+
+            Log::info("Total available slots for therapist {$therapistId} today: {$totalSlots}");
+            return $totalSlots;
+        } catch (\Exception $e) {
+            Log::error('Error counting available slots for therapist ' . $therapistId . ': ' . $e->getMessage());
             return 0;
         }
-
-        // Get existing bookings for today
-        $existingBookings = \App\Models\Booking::where('therapist_id', $therapistId)
-            ->where('date', $today)
-            ->whereIn('status', ['confirmed', 'pending'])
-            ->with('service')
-            ->get();
-
-        $totalSlots = 0;
-        $intervalMinutes = 30;
-        $defaultDuration = 60;
-
-        foreach ($availabilities as $availability) {
-            $startTime = Carbon::parse($availability->start_time);
-            $endTime = Carbon::parse($availability->end_time);
-            $currentTime = $startTime->copy();
-
-            while ($currentTime->copy()->addMinutes($defaultDuration)->lte($endTime)) {
-                $slotEndTime = $currentTime->copy()->addMinutes($defaultDuration);
-                $available = true;
-
-                foreach ($existingBookings as $booking) {
-                    $bookingStart = Carbon::parse($booking->time);
-                    $bookingDuration = $booking->service ? (int)$booking->service->duration : 60;
-                    $bookingEnd = $bookingStart->copy()->addMinutes($bookingDuration);
-
-                    if ($currentTime->lt($bookingEnd) && $slotEndTime->gt($bookingStart)) {
-                        $available = false;
-                        break;
-                    }
-                }
-
-                if ($available) {
-                    $totalSlots++;
-                }
-
-                $currentTime->addMinutes($intervalMinutes);
-            }
-        }
-
-        return $totalSlots;
     }
 
-    // Keep all your other existing methods...
+    /**
+     * Get all therapists (Admin only)
+     */
     public function index()
     {
         try {
@@ -222,529 +261,248 @@ class TimeSlotController extends Controller
         }
     }
 
-    // ... rest of your existing methods (store, update, destroy, etc.)
-
-
-    
     /**
-     * Get available time slots for a specific therapist on a specific date
+     * Create a new therapist (Admin only)
      */
-    public function getAvailableSlots(Request $request)
+    public function store(Request $request)
     {
-        $request->validate([
-            'serviceId' => 'required|exists:services,id',
-            'therapistId' => 'required|exists:therapists,id',
-            'date' => 'required|date|after_or_equal:today',
-            'duration' => 'required|integer|min:15'
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:therapists,email',
+            'phone' => 'required|string|max:20',
+            'bio' => 'nullable|string|max:1000',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'status' => 'boolean',
+            'services' => 'array',
+            'services.*' => 'exists:services,id'
         ]);
 
-        $serviceId = $request->serviceId;
-        $therapistId = $request->therapistId;
-        $date = $request->date;
-        $duration = (int)$request->duration;
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
 
         try {
-            // Get the day of the week for the requested date
-            $dayOfWeek = strtolower(Carbon::parse($date)->format('l'));
+            $therapistData = $request->only(['name', 'email', 'phone', 'bio']);
+            $therapistData['status'] = $request->get('status', true);
 
-            // Get therapist availability for this day
-            $therapistAvailabilities = TherapistAvailability::where('therapist_id', $therapistId)
-                ->where('day_of_week', $dayOfWeek)
-                ->where('is_active', true)
-                ->orderBy('start_time')
-                ->get();
-
-            if ($therapistAvailabilities->isEmpty()) {
-                return response()->json([
-                    'success' => true,
-                    'data' => [],
-                    'message' => 'No availability for this therapist on this day'
-                ]);
+            // Handle image upload
+            if ($request->hasFile('image')) {
+                $image = $request->file('image');
+                $imagePath = $image->store('therapists', 'public');
+                $therapistData['image'] = $imagePath;
             }
 
-            // Get existing bookings for this therapist on this date
-            $existingBookings = Booking::where('therapist_id', $therapistId)
-                ->where('date', $date)
+            $therapist = Therapist::create($therapistData);
+
+            // Attach services if provided
+            if ($request->has('services')) {
+                $therapist->services()->attach($request->services);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $therapist->load('services'),
+                'message' => 'Therapist created successfully'
+            ], 201);
+
+        } catch (\Exception $e) {
+            Log::error("Error creating therapist: " . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create therapist',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Update therapist (Admin only)
+     */
+    public function update(Request $request, $id)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => 'sometimes|required|string|max:255',
+            'email' => 'sometimes|required|email|unique:therapists,email,' . $id,
+            'phone' => 'sometimes|required|string|max:20',
+            'bio' => 'nullable|string|max:1000',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'status' => 'boolean',
+            'services' => 'array',
+            'services.*' => 'exists:services,id'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $therapist = Therapist::findOrFail($id);
+
+            $therapistData = $request->only(['name', 'email', 'phone', 'bio', 'status']);
+
+            // Handle image upload
+            if ($request->hasFile('image')) {
+                // Delete old image if it exists
+                if ($therapist->image) {
+                    Storage::disk('public')->delete($therapist->image);
+                }
+
+                $image = $request->file('image');
+                $imagePath = $image->store('therapists', 'public');
+                $therapistData['image'] = $imagePath;
+            }
+
+            $therapist->update($therapistData);
+
+            // Update services if provided
+            if ($request->has('services')) {
+                $therapist->services()->sync($request->services);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $therapist->load('services'),
+                'message' => 'Therapist updated successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("Error updating therapist: " . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update therapist',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete therapist (Admin only)
+     */
+    public function destroy($id)
+    {
+        try {
+            $therapist = Therapist::findOrFail($id);
+
+            // Check if therapist has active bookings
+            $hasActiveBookings = $therapist->bookings()
                 ->whereIn('status', ['confirmed', 'pending'])
-                ->with('service')
-                ->get();
+                ->exists();
 
-            $timeSlots = [];
-            $slotId = 1;
-            $intervalMinutes = 30; // 30 minute intervals
-
-            // Generate time slots based on therapist availability
-            foreach ($therapistAvailabilities as $availability) {
-                $startTime = Carbon::parse($availability->start_time);
-                $endTime = Carbon::parse($availability->end_time);
-
-                // Generate slots within this availability window
-                $currentTime = $startTime->copy();
-                
-                while ($currentTime->copy()->addMinutes($duration)->lte($endTime)) {
-                    $slotTime = $currentTime->format('H:i');
-                    $slotEndTime = $currentTime->copy()->addMinutes($duration);
-
-                    // Check if this slot overlaps with any existing booking
-                    $available = true;
-
-                    foreach ($existingBookings as $booking) {
-                        $bookingStart = Carbon::parse($booking->time);
-                        $bookingDuration = $booking->service ? (int)$booking->service->duration : 60;
-                        $bookingEnd = $bookingStart->copy()->addMinutes($bookingDuration);
-
-                        // Check for overlap
-                        if ($currentTime->lt($bookingEnd) && $slotEndTime->gt($bookingStart)) {
-                            $available = false;
-                            break;
-                        }
-                    }
-
-                    $timeSlots[] = [
-                        'id' => 'slot-' . $slotId++,
-                        'time' => $slotTime,
-                        'available' => $available,
-                        'therapist_id' => $therapistId
-                    ];
-
-                    $currentTime->addMinutes($intervalMinutes);
-                }
-            }
-
-            return response()->json([
-                'success' => true,
-                'data' => $timeSlots,
-                'therapist_schedule' => $therapistAvailabilities->map(function($availability) {
-                    return [
-                        'start_time' => $availability->start_time->format('H:i'),
-                        'end_time' => $availability->end_time->format('H:i'),
-                    ];
-                })
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Error getting available slots: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Error retrieving available time slots',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
-            ], 500);
-        }
-    }
-
-    /**
-     * Get available therapists for a service on a specific date
-     */
-    public function getAvailableTherapists(Request $request)
-    {
-        $request->validate([
-            'serviceId' => 'required|exists:services,id',
-            'date' => 'required|date|after_or_equal:today'
-        ]);
-
-        $serviceId = $request->serviceId;
-        $date = $request->date;
-        $dayOfWeek = strtolower(Carbon::parse($date)->format('l'));
-
-        try {
-            // Get therapists who can perform this service and have availability on this day
-            $availableTherapists = Therapist::whereHas('services', function($query) use ($serviceId) {
-                    $query->where('service_id', $serviceId);
-                })
-                ->whereHas('availabilities', function($query) use ($dayOfWeek) {
-                    $query->where('day_of_week', $dayOfWeek)
-                          ->where('is_active', true);
-                })
-                ->where('status', true)
-                ->with(['availabilities' => function($query) use ($dayOfWeek) {
-                    $query->where('day_of_week', $dayOfWeek)
-                          ->where('is_active', true)
-                          ->orderBy('start_time');
-                }])
-                ->get();
-
-            $therapistData = $availableTherapists->map(function($therapist) use ($date) {
-                // Count available slots for this therapist on this date
-                $availableSlots = $this->countAvailableSlots($therapist->id, $date);
-                
-                return [
-                    'id' => $therapist->id,
-                    'name' => $therapist->name,
-                    'email' => $therapist->email,
-                    'phone' => $therapist->phone,
-                    'image' => $therapist->image ? url('storage/' . $therapist->image) : null,
-                    'bio' => $therapist->bio,
-                    'available_slots_count' => $availableSlots,
-                    'schedule' => $therapist->availabilities->map(function($availability) {
-                        return [
-                            'day_of_week' => $availability->day_of_week,
-                            'start_time' => $availability->start_time->format('H:i'),
-                            'end_time' => $availability->end_time->format('H:i'),
-                            'is_active' => $availability->is_active,
-                        ];
-                    })
-                ];
-            });
-
-            return response()->json([
-                'success' => true,
-                'data' => $therapistData
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Error getting available therapists: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Error retrieving available therapists',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
-            ], 500);
-        }
-    }
-
-    /**
-     * Get available dates for a specific therapist in the next 3 months
-     */
-    public function getAvailableDates(Request $request, $therapistId)
-    {
-        $request->validate([
-            'serviceId' => 'sometimes|exists:services,id',
-            'months' => 'sometimes|integer|min:1|max:6'
-        ]);
-
-        $months = $request->get('months', 3); // Default to 3 months
-
-        try {
-            $therapist = Therapist::findOrFail($therapistId);
-            
-            // Get therapist's availability schedule
-            $availabilities = $therapist->activeAvailabilities;
-            
-            if ($availabilities->isEmpty()) {
+            if ($hasActiveBookings) {
                 return response()->json([
-                    'success' => true,
-                    'available_dates' => [],
-                    'message' => 'No availability schedule found for this therapist'
-                ]);
+                    'success' => false,
+                    'message' => 'Cannot delete therapist with active bookings. Please reassign or complete existing bookings first.'
+                ], 400);
             }
 
-            // Get the days of the week when therapist is available
-            $availableDaysOfWeek = $availabilities->pluck('day_of_week')->unique()->toArray();
-            
-            // Generate available dates for the next X months
-            $availableDates = [];
-            $startDate = Carbon::today();
-            $endDate = $startDate->copy()->addMonths($months);
-            
-            $currentDate = $startDate->copy();
-            while ($currentDate->lte($endDate)) {
-                $dayOfWeek = strtolower($currentDate->format('l'));
-                
-                // Check if therapist works on this day of the week
-                if (in_array($dayOfWeek, $availableDaysOfWeek)) {
-                    // Check if therapist has any available slots on this specific date
-                    $hasAvailableSlots = $this->countAvailableSlots($therapistId, $currentDate->toDateString()) > 0;
-                    
-                    if ($hasAvailableSlots) {
-                        $availableDates[] = $currentDate->toDateString();
-                    }
-                }
-                
-                $currentDate->addDay();
+            // Delete image if it exists
+            if ($therapist->image) {
+                Storage::disk('public')->delete($therapist->image);
             }
+
+            // Detach from services
+            $therapist->services()->detach();
+
+            // Soft delete the therapist
+            $therapist->delete();
 
             return response()->json([
                 'success' => true,
-                'available_dates' => $availableDates,
-                'therapist_name' => $therapist->name,
-                'total_available_days' => count($availableDates)
+                'message' => 'Therapist deleted successfully'
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Error getting available dates: ' . $e->getMessage());
+            Log::error("Error deleting therapist: " . $e->getMessage());
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Error retrieving available dates',
+                'message' => 'Failed to delete therapist',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
     }
 
     /**
-     * Get therapist's weekly schedule
+     * Assign therapist to service (Admin only)
      */
-    public function getTherapistSchedule($therapistId)
+    public function assignToService($therapistId, $serviceId)
     {
         try {
-            $therapist = Therapist::with('activeAvailabilities')->findOrFail($therapistId);
+            $therapist = Therapist::findOrFail($therapistId);
+            $service = Service::findOrFail($serviceId);
+
+            // Check if already assigned
+            if ($therapist->services()->where('service_id', $serviceId)->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Therapist is already assigned to this service'
+                ], 400);
+            }
+
+            $therapist->services()->attach($serviceId);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Therapist assigned to service successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("Error assigning therapist to service: " . $e->getMessage());
             
-            $schedule = $therapist->activeAvailabilities->groupBy('day_of_week')->map(function($dayAvailabilities) {
-                return $dayAvailabilities->map(function($availability) {
-                    return [
-                        'start_time' => $availability->start_time->format('H:i'),
-                        'end_time' => $availability->end_time->format('H:i'),
-                        'is_active' => $availability->is_active,
-                    ];
-                });
-            });
-
-            return response()->json([
-                'success' => true,
-                'therapist' => [
-                    'id' => $therapist->id,
-                    'name' => $therapist->name,
-                    'schedule' => $schedule
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Error getting therapist schedule: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Error retrieving therapist schedule',
+                'message' => 'Failed to assign therapist to service',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
     }
 
     /**
-     * Check if a specific time slot is available for a therapist
+     * Remove therapist from service (Admin only)
      */
-    public function checkSlotAvailability(Request $request)
+    public function removeFromService($therapistId, $serviceId)
     {
-        $request->validate([
-            'therapistId' => 'required|exists:therapists,id',
-            'date' => 'required|date|after_or_equal:today',
-            'time' => 'required|string',
-            'duration' => 'required|integer|min:15'
-        ]);
-
-        $therapistId = $request->therapistId;
-        $date = $request->date;
-        $time = $request->time;
-        $duration = $request->duration;
-
         try {
-            $isAvailable = $this->isSlotAvailable($therapistId, $date, $time, $duration);
-
-            return response()->json([
-                'success' => true,
-                'available' => $isAvailable,
-                'slot' => [
-                    'therapist_id' => $therapistId,
-                    'date' => $date,
-                    'time' => $time,
-                    'duration' => $duration
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Error checking slot availability: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Error checking slot availability',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
-            ], 500);
-        }
-    }
-
-    /**
-     * Count available slots for a therapist on a specific date
-     */
-    private function countAvailableSlots($therapistId, $date)
-    {
-        $dayOfWeek = strtolower(Carbon::parse($date)->format('l'));
-        
-        $availabilities = TherapistAvailability::where('therapist_id', $therapistId)
-            ->where('day_of_week', $dayOfWeek)
-            ->where('is_active', true)
-            ->get();
-
-        if ($availabilities->isEmpty()) {
-            return 0;
-        }
-
-        $existingBookings = Booking::where('therapist_id', $therapistId)
-            ->where('date', $date)
-            ->whereIn('status', ['confirmed', 'pending'])
-            ->with('service')
-            ->get();
-
-        $totalSlots = 0;
-        $intervalMinutes = 30;
-        $defaultDuration = 60; // Default service duration
-
-        foreach ($availabilities as $availability) {
-            $startTime = Carbon::parse($availability->start_time);
-            $endTime = Carbon::parse($availability->end_time);
-            $currentTime = $startTime->copy();
-
-            while ($currentTime->copy()->addMinutes($defaultDuration)->lte($endTime)) {
-                $slotEndTime = $currentTime->copy()->addMinutes($defaultDuration);
-                $available = true;
-
-                foreach ($existingBookings as $booking) {
-                    $bookingStart = Carbon::parse($booking->time);
-                    $bookingDuration = $booking->service ? (int)$booking->service->duration : 60;
-                    $bookingEnd = $bookingStart->copy()->addMinutes($bookingDuration);
-
-                    if ($currentTime->lt($bookingEnd) && $slotEndTime->gt($bookingStart)) {
-                        $available = false;
-                        break;
-                    }
-                }
-
-                if ($available) {
-                    $totalSlots++;
-                }
-
-                $currentTime->addMinutes($intervalMinutes);
-            }
-        }
-
-        return $totalSlots;
-    }
-
-    /**
-     * Check if a specific slot is available
-     */
-    private function isSlotAvailable($therapistId, $date, $time, $duration)
-    {
-        $dayOfWeek = strtolower(Carbon::parse($date)->format('l'));
-        $requestedStart = Carbon::parse("$date $time");
-        $requestedEnd = $requestedStart->copy()->addMinutes($duration);
-
-        // Check if therapist is available at this time
-        $therapistAvailable = TherapistAvailability::where('therapist_id', $therapistId)
-            ->where('day_of_week', $dayOfWeek)
-            ->where('is_active', true)
-            ->where('start_time', '<=', $time)
-            ->where('end_time', '>=', $requestedEnd->format('H:i:s'))
-            ->exists();
-
-        if (!$therapistAvailable) {
-            return false;
-        }
-
-        // Check for conflicting bookings
-        $conflictingBookings = Booking::where('therapist_id', $therapistId)
-            ->where('date', $date)
-            ->whereIn('status', ['confirmed', 'pending'])
-            ->with('service')
-            ->get();
-
-        foreach ($conflictingBookings as $booking) {
-            $bookingStart = Carbon::parse($booking->time);
-            $bookingDuration = $booking->service ? (int)$booking->service->duration : 60;
-            $bookingEnd = $bookingStart->copy()->addMinutes($bookingDuration);
-
-            // Check for overlap
-            if ($requestedStart->lt($bookingEnd) && $requestedEnd->gt($bookingStart)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Get therapist workload for a specific date range
-     */
-    public function getTherapistWorkload(Request $request, $therapistId)
-    {
-        $request->validate([
-            'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date'
-        ]);
-
-        try {
-            $startDate = $request->start_date;
-            $endDate = $request->end_date;
-
             $therapist = Therapist::findOrFail($therapistId);
 
-            $workload = [];
-            $currentDate = Carbon::parse($startDate);
-            $endDateCarbon = Carbon::parse($endDate);
+            // Check if therapist has active bookings for this service
+            $hasActiveBookings = $therapist->bookings()
+                ->where('service_id', $serviceId)
+                ->whereIn('status', ['confirmed', 'pending'])
+                ->exists();
 
-            while ($currentDate->lte($endDateCarbon)) {
-                $dateString = $currentDate->toDateString();
-                $totalSlots = $this->getTotalSlotsForDate($therapistId, $dateString);
-                $bookedSlots = $this->getBookedSlotsForDate($therapistId, $dateString);
-                $availableSlots = $totalSlots - $bookedSlots;
-
-                $workload[] = [
-                    'date' => $dateString,
-                    'day_of_week' => strtolower($currentDate->format('l')),
-                    'total_slots' => $totalSlots,
-                    'booked_slots' => $bookedSlots,
-                    'available_slots' => $availableSlots,
-                    'utilization_percentage' => $totalSlots > 0 ? round(($bookedSlots / $totalSlots) * 100, 2) : 0
-                ];
-
-                $currentDate->addDay();
+            if ($hasActiveBookings) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot remove therapist from service with active bookings'
+                ], 400);
             }
+
+            $therapist->services()->detach($serviceId);
 
             return response()->json([
                 'success' => true,
-                'therapist' => [
-                    'id' => $therapist->id,
-                    'name' => $therapist->name
-                ],
-                'workload' => $workload,
-                'period' => [
-                    'start_date' => $startDate,
-                    'end_date' => $endDate
-                ]
+                'message' => 'Therapist removed from service successfully'
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Error getting therapist workload: ' . $e->getMessage());
+            Log::error("Error removing therapist from service: " . $e->getMessage());
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Error retrieving therapist workload',
+                'message' => 'Failed to remove therapist from service',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
-    }
-
-    /**
-     * Get total possible slots for a therapist on a specific date
-     */
-    private function getTotalSlotsForDate($therapistId, $date)
-    {
-        $dayOfWeek = strtolower(Carbon::parse($date)->format('l'));
-        
-        $availabilities = TherapistAvailability::where('therapist_id', $therapistId)
-            ->where('day_of_week', $dayOfWeek)
-            ->where('is_active', true)
-            ->get();
-
-        $totalSlots = 0;
-        $intervalMinutes = 30;
-        $defaultDuration = 60;
-
-        foreach ($availabilities as $availability) {
-            $startTime = Carbon::parse($availability->start_time);
-            $endTime = Carbon::parse($availability->end_time);
-            $currentTime = $startTime->copy();
-
-            while ($currentTime->copy()->addMinutes($defaultDuration)->lte($endTime)) {
-                $totalSlots++;
-                $currentTime->addMinutes($intervalMinutes);
-            }
-        }
-
-        return $totalSlots;
-    }
-
-    /**
-     * Get booked slots for a therapist on a specific date
-     */
-    private function getBookedSlotsForDate($therapistId, $date)
-    {
-        return Booking::where('therapist_id', $therapistId)
-            ->where('date', $date)
-            ->whereIn('status', ['confirmed', 'pending'])
-            ->count();
     }
 }
