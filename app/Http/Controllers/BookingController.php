@@ -30,6 +30,7 @@ class BookingController extends Controller
         // Validate the booking data - directly accepting address fields or nested object
         $validator = Validator::make($request->all(), [
             'service_id' => 'required|exists:services,id',
+            'therapist_id' => 'required|exists:therapists,id',
             'date' => 'required|date|after_or_equal:today',
             'time' => 'required|string',
             'name' => 'required|string|max:255',
@@ -161,6 +162,7 @@ class BookingController extends Controller
         // Create the booking with direct address fields
         $booking = new Booking();
         $booking->service_id = $request->service_id;
+        $booking->therapist_id = $request->therapist_id;
         $booking->user_id = $user ? $user->id : null;
         $booking->date = $request->date;
         $booking->time = $request->time;
@@ -208,28 +210,26 @@ class BookingController extends Controller
 
     public function show(Request $request, $id)
     {
-
         Log::info('Auth header', [
             'authorization' => $request->header('Authorization'),
             'content_type' => $request->header('Content-Type')
         ]);
-
-
+        
         try {
-            // Find the booking or return 404
-            $booking = Booking::findOrFail($id);
-
+            // Find the booking with related service and therapist data
+            $booking = Booking::with(['service', 'therapist'])->findOrFail($id);
+            
             // Get the authenticated user using both methods for backup
             $user = User::where('id', $booking->user_id)->first();
-
-
+            
             // Log authentication details for debugging
             Log::info('Booking access attempt', [
                 'booking_id' => $id,
                 'booking_user_id' => $booking->user_id,
-                'authenticated_user' => $user ? $user->id : 'None'
+                'authenticated_user' => $user ? $user->id : 'None',
+                'therapist_id' => $booking->therapist_id // ADD: Log therapist info
             ]);
-
+            
             // For security, if the booking belongs to a user, only allow that user to see it
             if ($booking->user_id && ($user === null || $user->id != $booking->user_id)) {
                 return response()->json([
@@ -237,41 +237,50 @@ class BookingController extends Controller
                     'message' => 'Unauthorized access to booking'
                 ], 403);
             }
-
+            
             // Get the associated service
             $service = $booking->service;
-
             if (!$service) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Service associated with this booking not found'
                 ], 404);
             }
-
+            
+            // Get the associated therapist (if exists)
+            $therapist = $booking->therapist;
+            
+            // Prepare response data
+            $responseData = [
+                'id' => $booking->id,
+                'service_name' => $service->title,
+                'date' => $booking->date,
+                'time' => $booking->time,
+                'duration' => $service->duration,
+                'price' => $booking->price,
+                'reference' => $booking->reference,
+                'status' => $booking->status,
+                'name' => $booking->name,
+                'email' => $booking->email,
+                'phone' => $booking->phone,
+                'address_line1' => $booking->address_line1,
+                'address_line2' => $booking->address_line2,
+                'city' => $booking->city,
+                'postcode' => $booking->postcode,
+                'notes' => $booking->notes,
+                'created_at' => $booking->created_at->format('Y-m-d H:i:s'),
+                'updated_at' => $booking->updated_at->format('Y-m-d H:i:s'),
+                // ADD: Include therapist information
+                'therapist_id' => $booking->therapist_id,
+                'therapist_name' => $therapist ? $therapist->name : null
+            ];
+            
             // Return the booking data
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'id' => $booking->id,
-                    'service_name' => $service->title,
-                    'date' => $booking->date,
-                    'time' => $booking->time,
-                    'duration' => $service->duration,
-                    'price' => $booking->price,
-                    'reference' => $booking->reference,
-                    'status' => $booking->status,
-                    'name' => $booking->name,
-                    'email' => $booking->email,
-                    'phone' => $booking->phone,
-                    'address_line1' => $booking->address_line1,
-                    'address_line2' => $booking->address_line2,
-                    'city' => $booking->city,
-                    'postcode' => $booking->postcode,
-                    'notes' => $booking->notes,
-                    'created_at' => $booking->created_at->format('Y-m-d H:i:s'),
-                    'updated_at' => $booking->updated_at->format('Y-m-d H:i:s')
-                ]
+                'data' => $responseData
             ]);
+            
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,

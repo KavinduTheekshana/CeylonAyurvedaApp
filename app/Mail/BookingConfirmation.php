@@ -24,6 +24,7 @@ class BookingConfirmation extends Mailable
      * @var \App\Models\Service
      */
     public $service;
+    public $therapist;
 
     /**
      * Create a new message instance.
@@ -35,6 +36,7 @@ class BookingConfirmation extends Mailable
     {
         $this->booking = $booking;
         $this->service = $booking->service;
+        $this->therapist = $booking->therapist; 
     }
 
     /**
@@ -45,6 +47,12 @@ class BookingConfirmation extends Mailable
     public function build()
     {
         return $this->subject('Booking Confirmation: ' . $this->booking->reference)
-                    ->view('emails.booking-confirmation');
+            ->view('emails.booking-confirmation')
+            ->with([
+                'booking' => $this->booking,
+                'service' => $this->service,
+                'therapist' => $this->therapist, // ADD: Pass therapist to view
+                'therapistName' => $this->therapist ? $this->therapist->name : 'To be assigned', // ADD: Helper variable
+            ]);
     }
 }

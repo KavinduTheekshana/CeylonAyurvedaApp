@@ -74,7 +74,7 @@ class Booking extends Model
      /**
      * Get the therapist of the booking.
      */
-    public function therapist(): BelongsTo
+    public function therapist()
     {
         return $this->belongsTo(Therapist::class);
     }

@@ -1,18 +1,14 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Booking Confirmation</title>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booking Confirmation</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             line-height: 1.6;
             color: #333;
-            margin: 0;
-            padding: 0;
-        }
-        .container {
             max-width: 600px;
             margin: 0 auto;
             padding: 20px;
@@ -22,66 +18,162 @@
             color: white;
             padding: 20px;
             text-align: center;
+            border-radius: 8px 8px 0 0;
         }
         .content {
-            padding: 20px;
+            background-color: #f9f9f9;
+            padding: 30px;
+            border-radius: 0 0 8px 8px;
         }
         .booking-details {
-            background-color: #f9f9f9;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 15px;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
             margin: 20px 0;
+            border-left: 4px solid #9A563A;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .detail-label {
+            font-weight: bold;
+            color: #666;
+        }
+        .detail-value {
+            color: #333;
+        }
+        .therapist-info {
+            background-color: #FFF8F0;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+            border: 1px solid #FFE4B5;
         }
         .footer {
             text-align: center;
-            padding: 20px;
-            font-size: 0.8em;
-            color: #777;
+            margin-top: 30px;
+            color: #666;
+            font-size: 14px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Booking Confirmation</h1>
-        </div>
+    <div class="header">
+        <h1>Booking Confirmation</h1>
+        <p>Thank you for your booking!</p>
+    </div>
+
+    <div class="content">
+        <h2>Hello {{ $booking->name }},</h2>
         
-        <div class="content">
-            <p>Dear {{ $booking->name }},</p>
+        <p>Your appointment has been successfully booked. Here are the details:</p>
+
+        <div class="booking-details">
+            <h3>Booking Details</h3>
             
-            <p>Thank you for your booking. Your booking has been confirmed and we look forward to providing our services to you.</p>
-            
-            <div class="booking-details">
-                <h2>Booking Details</h2>
-                <p><strong>Reference:</strong> {{ $booking->reference }}</p>
-                <p><strong>Service:</strong> {{ $service->title }}</p>
-                <p><strong>Date:</strong> {{ \Carbon\Carbon::parse($booking->date)->format('l, F j, Y') }}</p>
-                <p><strong>Time:</strong> {{ $booking->time }}</p>
-                <p><strong>Address:</strong><br>
-                    {{ $booking->address_line1 }}<br>
-                    @if($booking->address_line2){{ $booking->address_line2 }}<br>@endif
-                    {{ $booking->city }}<br>
-                    {{ $booking->postcode }}
-                </p>
-                @if($booking->notes)
-                <p><strong>Additional Notes:</strong> {{ $booking->notes }}</p>
-                @endif
-                <p><strong>Total Price:</strong> £{{ number_format($booking->price, 2) }}</p>
+            <div class="detail-row">
+                <span class="detail-label">Reference Number:</span>
+                <span class="detail-value">{{ $booking->reference }}</span>
             </div>
             
-            <p>If you need to make any changes to your booking or have any questions, please contact us as soon as possible at <a href="mailto:support@ceylonayurvedahealth.com">support@ceylonayurvedahealth.com</a> or call us at +44 20 313 78 313.</p>
+            <div class="detail-row">
+                <span class="detail-label">Service:</span>
+                <span class="detail-value">{{ $service->title }}</span>
+            </div>
             
-            <p>Thank you for choosing our services.</p>
+            <!-- NEW: Display Therapist Information -->
+            @if($therapist)
+            <div class="detail-row">
+                <span class="detail-label">Therapist:</span>
+                <span class="detail-value">{{ $therapist->name }}</span>
+            </div>
+            @endif
             
-            <p>Best regards,<br>
-            Ceylon Ayurveda Health</p>
+            <div class="detail-row">
+                <span class="detail-label">Date:</span>
+                <span class="detail-value">{{ \Carbon\Carbon::parse($booking->date)->format('l, F j, Y') }}</span>
+            </div>
+            
+            <div class="detail-row">
+                <span class="detail-label">Time:</span>
+                <span class="detail-value">{{ \Carbon\Carbon::parse($booking->time)->format('g:i A') }}</span>
+            </div>
+            
+            <div class="detail-row">
+                <span class="detail-label">Duration:</span>
+                <span class="detail-value">{{ $service->duration }} minutes</span>
+            </div>
+            
+            <div class="detail-row">
+                <span class="detail-label">Price:</span>
+                <span class="detail-value">£{{ number_format($booking->price, 2) }}</span>
+            </div>
+            
+            <div class="detail-row">
+                <span class="detail-label">Status:</span>
+                <span class="detail-value">{{ ucfirst($booking->status) }}</span>
+            </div>
         </div>
+
+        <!-- NEW: Special section for therapist information -->
+        @if($therapist)
+        <div class="therapist-info">
+            <h4>Your Therapist</h4>
+            <p><strong>{{ $therapist->name }}</strong> will be providing your {{ $service->title }} service.</p>
+            @if($therapist->bio)
+                <p>{{ $therapist->bio }}</p>
+            @endif
+            <p><em>Your Therapist arrive 10 minutes early for your appointment.</em></p>
+        </div>
+        @else
+        <div class="therapist-info">
+            <h4>Therapist Assignment</h4>
+            <p>Your therapist will be assigned and you'll be notified before your appointment.</p>
+        </div>
+        @endif
+
+        <div class="booking-details">
+            <h3>Appointment Location</h3>
+            <p>
+                {{ $booking->address_line1 }}<br>
+                @if($booking->address_line2)
+                    {{ $booking->address_line2 }}<br>
+                @endif
+                {{ $booking->city }}, {{ $booking->postcode }}
+            </p>
+        </div>
+
+        @if($booking->notes)
+        <div class="booking-details">
+            <h3>Special Notes</h3>
+            <p>{{ $booking->notes }}</p>
+        </div>
+        @endif
+
+        <div class="booking-details">
+            <h3>Contact Information</h3>
+            <div class="detail-row">
+                <span class="detail-label">Email:</span>
+                <span class="detail-value">{{ $booking->email }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Phone:</span>
+                <span class="detail-value">{{ $booking->phone }}</span>
+            </div>
+        </div>
+
+        <p><strong>Important:</strong> If you need to reschedule or cancel your appointment, please contact us at least 24 hours in advance.</p>
         
-        <div class="footer">
-            <p>© {{ date('Y') }} Ceylon Ayurveda Health. All rights reserved.</p>
-            <p>464 Alexandra Ave, Rayners Lane, Harrow HA2 9TL</p>
-        </div>
+        <p>We look forward to seeing you!</p>
+    </div>
+
+    <div class="footer">
+        <p>This is an automated email. Please do not reply to this message.</p>
+        <p>&copy; {{ date('Y') }} Your Company Name. All rights reserved.</p>
     </div>
 </body>
 </html>
