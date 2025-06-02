@@ -4,15 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\Service;
 use App\Models\Therapist;
+use App\Models\TherapistAvailability;
+use App\Models\Booking;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class TherapistController extends Controller
 {
     /**
-     * Get therapists assigned to a specific service
+     * Get therapists assigned to a specific service with availability data
      * Public endpoint for booking flow
      */
     public function getServiceTherapists($serviceId)
@@ -23,6 +26,8 @@ class TherapistController extends Controller
             // Find the service first
             $service = Service::find($serviceId);
 
+            // return($service);
+
             if (!$service) {
                 Log::warning("Service not found: " . $serviceId);
                 return response()->json([
@@ -31,16 +36,39 @@ class TherapistController extends Controller
                 ], 404);
             }
 
-            // Try to get therapists with proper relationship
+            // Get therapists with proper relationship and their availability
             $therapists = $service->therapists()
                 ->where('status', true)
+                ->with([
+                    'availabilities' => function ($query) {
+                        $query->where('is_active', true)->orderBy('day_of_week')->orderBy('start_time');
+                    }
+                ])
                 ->orderBy('name')
                 ->get();
 
             Log::info("Found " . $therapists->count() . " therapists for service " . $serviceId);
 
-            // Format therapist data
-            $therapistData = $therapists->map(function($therapist) {
+            // Format therapist data with availability information
+            $therapistData = $therapists->map(function ($therapist) use ($service) {
+                // Get available dates for the next 3 months
+                $availableDates = $this->getTherapistAvailableDates($therapist->id, 3);
+
+                // Count available slots for today
+                $todaySlots = $this->countAvailableSlotsToday($therapist->id, $service->duration ?? 60);
+
+                // Format schedule data
+                $schedule = $therapist->availabilities->map(function ($availability) {
+                    return [
+                        'day_of_week' => $availability->day_of_week,
+                        'start_time' => $availability->start_time->format('H:i'),
+                        'end_time' => $availability->end_time->format('H:i'),
+                        'is_active' => $availability->is_active,
+                    ];
+                });
+
+                Log::info("Therapist {$therapist->name} - Available dates: " . count($availableDates) . ", Today slots: {$todaySlots}, Schedule items: " . $schedule->count());
+
                 return [
                     'id' => $therapist->id,
                     'name' => $therapist->name,
@@ -48,7 +76,10 @@ class TherapistController extends Controller
                     'phone' => $therapist->phone,
                     'image' => $therapist->image ? url('storage/' . $therapist->image) : null,
                     'bio' => $therapist->bio,
-                    'status' => $therapist->status
+                    'status' => $therapist->status,
+                    'available_slots_count' => $todaySlots,
+                    'available_dates_count' => count($availableDates),
+                    'schedule' => $schedule
                 ];
             });
 
@@ -60,12 +91,171 @@ class TherapistController extends Controller
         } catch (\Exception $e) {
             Log::error("Error fetching therapists: " . $e->getMessage());
             Log::error("Stack trace: " . $e->getTraceAsString());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch therapists',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
+        }
+    }
+
+    /**
+     * Get available dates for a specific therapist
+     */
+    private function getTherapistAvailableDates($therapistId, $months = 3)
+    {
+        try {
+            // Get therapist with availability
+            $therapist = Therapist::with([
+                'availabilities' => function ($query) {
+                    $query->where('is_active', true);
+                }
+            ])->find($therapistId);
+
+            if (!$therapist || $therapist->availabilities->isEmpty()) {
+                Log::info("No availability found for therapist {$therapistId}");
+                return [];
+            }
+
+            // Get the days of the week when therapist is available
+            $availableDaysOfWeek = $therapist->availabilities->pluck('day_of_week')->unique()->toArray();
+
+            Log::info("Therapist {$therapistId} available days: " . implode(', ', $availableDaysOfWeek));
+
+            // Generate available dates for the next X months
+            $availableDates = [];
+            $startDate = Carbon::today();
+            $endDate = $startDate->copy()->addMonths($months);
+
+            $currentDate = $startDate->copy();
+            while ($currentDate->lte($endDate)) {
+                $dayOfWeek = strtolower($currentDate->format('l'));
+
+                // Check if therapist works on this day of the week
+                if (in_array($dayOfWeek, $availableDaysOfWeek)) {
+                    $availableDates[] = $currentDate->toDateString();
+                }
+
+                $currentDate->addDay();
+            }
+
+            Log::info("Generated " . count($availableDates) . " available dates for therapist {$therapistId}");
+            return $availableDates;
+
+        } catch (\Exception $e) {
+            Log::error('Error getting available dates for therapist ' . $therapistId . ': ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Count available slots for today
+     */
+    private function countAvailableSlotsToday($therapistId, $serviceDuration)
+    {
+        Log::info($serviceDuration);
+        try {
+            $today = Carbon::today()->toDateString();
+            $dayOfWeek = strtolower(Carbon::today()->format('l'));
+
+            Log::info("Checking slots for therapist {$therapistId} on {$today} ({$dayOfWeek})");
+
+            // Get therapist availability for today
+            $availabilities = TherapistAvailability::where('therapist_id', $therapistId)
+                ->where('day_of_week', $dayOfWeek)
+                ->where('is_active', true)
+                ->get();
+
+            if ($availabilities->isEmpty()) {
+                Log::info("No availability for therapist {$therapistId} on {$dayOfWeek}");
+                return 0;
+            }
+
+            Log::info("Found " . $availabilities->count() . " availability slots for therapist {$therapistId} on {$dayOfWeek}");
+
+            // Get existing bookings for today
+            $existingBookings = Booking::where('therapist_id', $therapistId)
+                ->where('date', $today)
+                ->whereIn('status', ['confirmed', 'pending'])
+                ->with('service')
+                ->get();
+
+            Log::info("Found " . $existingBookings->count() . " existing bookings for therapist {$therapistId} on {$today}");
+
+            $totalSlots = 0; // ✅ This will accumulate slots from all availability windows
+            $intervalMinutes = $serviceDuration; // Time slot intervals
+            $currentDateTime = Carbon::now();
+            $todayDate = $currentDateTime->toDateString();
+
+            foreach ($availabilities as $availability) {
+                $startTime = Carbon::parse($availability->start_time);
+                $endTime = Carbon::parse($availability->end_time);
+                $currentTime = $startTime->copy();
+                $windowSlots = 0; // ✅ FIXED: Initialize window counter for each availability window
+
+                // If it's today, start from current time or availability start time, whichever is later
+                if ($today === $todayDate) {
+                    $now = Carbon::now();
+                    $availabilityStart = Carbon::today()->setTimeFromTimeString($availability->start_time->format('H:i:s'));
+
+                    if ($now->gt($availabilityStart)) {
+                        // Round up to next 30-minute interval
+                        $minutes = $now->minute;
+                        $roundedMinutes = ceil($minutes / 30) * 30;
+                        $currentTime = $now->setMinute($roundedMinutes)->setSecond(0);
+
+                        // If rounded time exceeds 60 minutes, move to next hour
+                        if ($currentTime->minute >= 60) {
+                            $currentTime = $currentTime->addHour()->setMinute(0);
+                        }
+                    } else {
+                        $currentTime = $availabilityStart;
+                    }
+                }
+
+                Log::info("Processing availability slot: {$startTime->format('H:i')} - {$endTime->format('H:i')}");
+
+                while ($currentTime->copy()->addMinutes($serviceDuration)->lte($endTime)) {
+                    $slotStart = $currentTime->copy();
+                    $slotEnd = $slotStart->copy()->addMinutes($serviceDuration);
+                    $isAvailable = true;
+
+                    // ✅ REMOVED: Redundant past-time check since we already handle this above
+                    // The currentTime is already set to appropriate time based on current time
+
+                    // Check against existing bookings
+                    foreach ($existingBookings as $booking) {
+                        $bookingStart = Carbon::parse($booking->time);
+                        $bookingDuration = $booking->service ? (int) $booking->service->duration : 60;
+                        $bookingEnd = $bookingStart->copy()->addMinutes($bookingDuration);
+
+                        // Check for time overlap
+                        if ($slotStart->lt($bookingEnd) && $bookingStart->lt($slotEnd)) {
+                            $isAvailable = false;
+                            Log::debug("Slot {$slotStart->format('H:i')}-{$slotEnd->format('H:i')} conflicts with booking {$bookingStart->format('H:i')}-{$bookingEnd->format('H:i')}");
+                            break;
+                        }
+                    }
+
+                    if ($isAvailable) {
+                        $windowSlots++; // ✅ FIXED: Increment the window counter
+                        Log::debug("Available slot: {$slotStart->format('H:i')}-{$slotEnd->format('H:i')}");
+                    }
+
+                    $currentTime->addMinutes($intervalMinutes);
+                }
+
+                // ✅ FIXED: Add window slots to total after processing each availability window
+                $totalSlots += $windowSlots;
+                Log::info("Window {$startTime->format('H:i')}-{$endTime->format('H:i')} has {$windowSlots} available slots");
+            }
+
+            Log::info("Total available slots for therapist {$therapistId} today: {$totalSlots}");
+            return $totalSlots; // ✅ FIXED: Now returns the correct total
+        } catch (\Exception $e) {
+            Log::error('Error counting available slots for therapist ' . $therapistId . ': ' . $e->getMessage());
+            return 0;
         }
     }
 
@@ -77,7 +267,7 @@ class TherapistController extends Controller
         try {
             $therapists = Therapist::with('services')->orderBy('name')->get();
 
-            $therapistData = $therapists->map(function($therapist) {
+            $therapistData = $therapists->map(function ($therapist) {
                 return [
                     'id' => $therapist->id,
                     'name' => $therapist->name,
@@ -86,7 +276,7 @@ class TherapistController extends Controller
                     'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,
                     'bio' => $therapist->bio,
                     'status' => $therapist->status,
-                    'services' => $therapist->services->map(function($service) {
+                    'services' => $therapist->services->map(function ($service) {
                         return [
                             'id' => $service->id,
                             'title' => $service->title,
@@ -101,7 +291,7 @@ class TherapistController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error("Error fetching all therapists: " . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch therapists',
@@ -160,7 +350,7 @@ class TherapistController extends Controller
 
         } catch (\Exception $e) {
             Log::error("Error creating therapist: " . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create therapist',
@@ -225,7 +415,7 @@ class TherapistController extends Controller
 
         } catch (\Exception $e) {
             Log::error("Error updating therapist: " . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update therapist',
@@ -272,7 +462,7 @@ class TherapistController extends Controller
 
         } catch (\Exception $e) {
             Log::error("Error deleting therapist: " . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete therapist',
@@ -307,7 +497,7 @@ class TherapistController extends Controller
 
         } catch (\Exception $e) {
             Log::error("Error assigning therapist to service: " . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to assign therapist to service',
@@ -346,7 +536,7 @@ class TherapistController extends Controller
 
         } catch (\Exception $e) {
             Log::error("Error removing therapist from service: " . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to remove therapist from service',
