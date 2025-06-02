@@ -14,6 +14,105 @@ use Carbon\Carbon;
 
 class TherapistController extends Controller
 {
+
+    public function getTherapistBookings($therapistId, Request $request)
+    {
+        try {
+            // Validate the therapist exists
+            $therapist = Therapist::find($therapistId);
+            
+            if (!$therapist) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Therapist not found'
+                ], 404);
+            }
+    
+            // Get the date parameter from the query string
+            $date = $request->query('date');
+            
+            if (!$date) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Date parameter is required'
+                ], 400);
+            }
+    
+            // Validate the date format
+            try {
+                $parsedDate = Carbon::createFromFormat('Y-m-d', $date);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid date format. Use YYYY-MM-DD'
+                ], 400);
+            }
+    
+            Log::info("Fetching bookings for therapist {$therapistId} on {$date}");
+    
+            // Get bookings for the therapist on the specified date
+            $bookings = Booking::where('therapist_id', $therapistId)
+                ->where('date', $date)
+                ->whereIn('status', ['confirmed', 'pending']) // Only active bookings
+                ->with(['service:id,title,duration', 'user:id,name']) // Include related data
+                ->orderBy('time')
+                ->get();
+    
+            Log::info("Found " . $bookings->count() . " bookings for therapist {$therapistId} on {$date}");
+    
+            // Format the booking data for the response
+            $formattedBookings = $bookings->map(function ($booking) {
+                // FIXED: Format time as HH:MM string instead of full datetime
+                $timeFormatted = is_string($booking->time) 
+                    ? $booking->time 
+                    : Carbon::parse($booking->time)->format('H:i');
+    
+                return [
+                    'id' => $booking->id,
+                    'date' => $booking->date, // Keep as date
+                    'time' => $timeFormatted, // NOW RETURNS "09:00" format
+                    'status' => $booking->status,
+                    'service' => [
+                        'id' => $booking->service->id,
+                        'title' => $booking->service->title,
+                        'duration' => $booking->service->duration ?? 60, // Default to 60 minutes
+                    ],
+                    'customer' => [
+                        'name' => $booking->name,
+                        'email' => $booking->email,
+                        'phone' => $booking->phone,
+                    ],
+                    'user' => $booking->user ? [
+                        'id' => $booking->user->id,
+                        'name' => $booking->user->name,
+                    ] : null,
+                    'reference' => $booking->reference,
+                    'created_at' => $booking->created_at->toDateTimeString(),
+                ];
+            });
+    
+            return response()->json([
+                'success' => true,
+                'data' => $formattedBookings,
+                'meta' => [
+                    'therapist_id' => (int) $therapistId,
+                    'therapist_name' => $therapist->name,
+                    'date' => $date,
+                    'total_bookings' => $bookings->count(),
+                ]
+            ]);
+    
+        } catch (\Exception $e) {
+            Log::error("Error fetching therapist bookings: " . $e->getMessage());
+            Log::error("Stack trace: " . $e->getTraceAsString());
+    
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch therapist bookings',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
     /**
      * Get therapists assigned to a specific service with availability data
      * Public endpoint for booking flow

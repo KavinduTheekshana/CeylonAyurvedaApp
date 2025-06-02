@@ -77,6 +77,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/bookings/show/{id}', [BookingController::class, 'showBooking']);
     Route::post('/bookings/{id}/cancel', [BookingController::class, 'cancelBooking']);
 
+  
+
     // Delete account route
     Route::post('/account/delete', [DeleteAccountController::class, 'deleteAccount']);
 });
@@ -88,3 +90,5 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::put('/services/{id}', [ServiceController::class, 'update']);
     Route::delete('/services/{id}', [ServiceController::class, 'destroy']);
 });
+
+Route::get('/therapists/{therapistId}/bookings', [TherapistController::class, 'getTherapistBookings']);
