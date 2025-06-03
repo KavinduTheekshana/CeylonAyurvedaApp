@@ -92,3 +92,4 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
 });
 
 Route::get('/therapists/{therapistId}/bookings', [TherapistController::class, 'getTherapistBookings']);
+Route::get('/therapists/details/{id}', [TherapistController::class, 'show']);

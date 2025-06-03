@@ -15,29 +15,164 @@ use Carbon\Carbon;
 class TherapistController extends Controller
 {
 
-    public function getTherapistBookings($therapistId, Request $request)
+    public function show($id)
     {
         try {
-            // Validate the therapist exists
-            $therapist = Therapist::find($therapistId);
-            
+            Log::info("Fetching therapist details for ID: " . $id);
+    
+            // Find the therapist with relationships
+            $therapist = Therapist::with([
+                'availabilities' => function ($query) {
+                    $query->where('is_active', true)
+                          ->orderBy('day_of_week')
+                          ->orderBy('start_time');
+                },
+                'services' => function ($query) {
+                    $query->where('services.status', true)
+                          ->select('services.id', 'services.title', 'services.price', 'services.duration');
+                }
+            ])->find($id);
+    
             if (!$therapist) {
+                Log::warning("Therapist not found: " . $id);
                 return response()->json([
                     'success' => false,
                     'message' => 'Therapist not found'
                 ], 404);
             }
     
+            Log::info("Found therapist: " . $therapist->name);
+    
+            // Format availability schedule
+            $schedule = $therapist->availabilities->map(function ($availability) {
+                return [
+                    'day_of_week' => $availability->day_of_week,
+                    'start_time' => $availability->start_time->format('H:i'),
+                    'end_time' => $availability->end_time->format('H:i'),
+                    'is_active' => $availability->is_active,
+                ];
+            });
+    
+            // Get available services
+            $services = $therapist->services->map(function ($service) {
+                return [
+                    'id' => $service->id,
+                    'title' => $service->title,
+                    'price' => $service->price,
+                    'duration' => $service->duration,
+                ];
+            });
+    
+            // Get some availability stats
+            $availableDates = $this->getTherapistAvailableDates($therapist->id, 3);
+            $todaySlots = $this->countAvailableSlotsToday($therapist->id, 60); // Default 60-minute slots
+    
+            // Format the therapist data
+            $therapistData = [
+                'id' => $therapist->id,
+                'name' => $therapist->name,
+                'email' => $therapist->email,
+                'phone' => $therapist->phone,
+                'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,
+                'bio' => $therapist->bio,
+                'status' => $therapist->status,
+                'created_at' => $therapist->created_at->toDateTimeString(),
+                'updated_at' => $therapist->updated_at->toDateTimeString(),
+                
+                // Schedule information
+                'schedule' => $schedule,
+                'available_days' => $this->formatAvailableDays($schedule),
+                
+                // Services they provide
+                'services' => $services,
+                
+                // Availability stats
+                'availability_stats' => [
+                    'available_dates_count' => count($availableDates),
+                    'today_slots_count' => $todaySlots,
+                    'next_available_dates' => array_slice($availableDates, 0, 7), // Next 7 available dates
+                ],
+                
+                // Professional info (you can add these fields to your therapist table if needed)
+                'specializations' => [], // Add if you have this data
+                'certifications' => [], // Add if you have this data
+                'experience_years' => null, // Add if you have this data
+                'languages' => [], // Add if you have this data
+            ];
+    
+            return response()->json([
+                'success' => true,
+                'data' => $therapistData,
+                'message' => 'Therapist details retrieved successfully'
+            ]);
+    
+        } catch (\Exception $e) {
+            Log::error("Error fetching therapist details: " . $e->getMessage());
+            Log::error("Stack trace: " . $e->getTraceAsString());
+    
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while retrieving therapist details',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    private function formatAvailableDays($schedule)
+    {
+        if ($schedule->isEmpty()) {
+            return 'No availability';
+        }
+
+        $daysOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        $dayAbbreviations = [
+            'monday' => 'Mon',
+            'tuesday' => 'Tue',
+            'wednesday' => 'Wed',
+            'thursday' => 'Thu',
+            'friday' => 'Fri',
+            'saturday' => 'Sat',
+            'sunday' => 'Sun'
+        ];
+
+        $availableDays = $schedule
+            ->pluck('day_of_week')
+            ->unique()
+            ->sort(function ($a, $b) use ($daysOrder) {
+                return array_search($a, $daysOrder) - array_search($b, $daysOrder);
+            })
+            ->map(function ($day) use ($dayAbbreviations) {
+                return $dayAbbreviations[$day] ?? ucfirst($day);
+            })
+            ->values()
+            ->toArray();
+
+        return implode(', ', $availableDays);
+    }
+
+    public function getTherapistBookings($therapistId, Request $request)
+    {
+        try {
+            // Validate the therapist exists
+            $therapist = Therapist::find($therapistId);
+
+            if (!$therapist) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Therapist not found'
+                ], 404);
+            }
+
             // Get the date parameter from the query string
             $date = $request->query('date');
-            
+
             if (!$date) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Date parameter is required'
                 ], 400);
             }
-    
+
             // Validate the date format
             try {
                 $parsedDate = Carbon::createFromFormat('Y-m-d', $date);
@@ -47,9 +182,9 @@ class TherapistController extends Controller
                     'message' => 'Invalid date format. Use YYYY-MM-DD'
                 ], 400);
             }
-    
+
             Log::info("Fetching bookings for therapist {$therapistId} on {$date}");
-    
+
             // Get bookings for the therapist on the specified date
             $bookings = Booking::where('therapist_id', $therapistId)
                 ->where('date', $date)
@@ -57,16 +192,16 @@ class TherapistController extends Controller
                 ->with(['service:id,title,duration', 'user:id,name']) // Include related data
                 ->orderBy('time')
                 ->get();
-    
+
             Log::info("Found " . $bookings->count() . " bookings for therapist {$therapistId} on {$date}");
-    
+
             // Format the booking data for the response
             $formattedBookings = $bookings->map(function ($booking) {
                 // FIXED: Format time as HH:MM string instead of full datetime
-                $timeFormatted = is_string($booking->time) 
-                    ? $booking->time 
+                $timeFormatted = is_string($booking->time)
+                    ? $booking->time
                     : Carbon::parse($booking->time)->format('H:i');
-    
+
                 return [
                     'id' => $booking->id,
                     'date' => $booking->date, // Keep as date
@@ -90,7 +225,7 @@ class TherapistController extends Controller
                     'created_at' => $booking->created_at->toDateTimeString(),
                 ];
             });
-    
+
             return response()->json([
                 'success' => true,
                 'data' => $formattedBookings,
@@ -101,11 +236,11 @@ class TherapistController extends Controller
                     'total_bookings' => $bookings->count(),
                 ]
             ]);
-    
+
         } catch (\Exception $e) {
             Log::error("Error fetching therapist bookings: " . $e->getMessage());
             Log::error("Stack trace: " . $e->getTraceAsString());
-    
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch therapist bookings',
