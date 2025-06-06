@@ -6,6 +6,7 @@ use App\Filament\Resources\TherapistResource\Pages;
 use App\Filament\Resources\TherapistResource\RelationManagers\AvailabilitiesRelationManager;
 use App\Models\Therapist;
 use Filament\Forms;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -57,6 +58,13 @@ class TherapistResource extends Resource
                 Textarea::make('bio')
                     ->maxLength(500)
                     ->columnSpanFull(),
+
+                DatePicker::make('work_start_date')
+                    ->label('Job Start Date')
+                    ->native(false)
+                    ->displayFormat('d/m/Y')
+                    ->format('Y-m-d')
+                    ->helperText('Select when the therapist starts/started this job'),
                     
                 Toggle::make('status')
                     ->label('Active')
@@ -90,6 +98,52 @@ class TherapistResource extends Resource
                     
                 TextColumn::make('phone')
                     ->searchable(),
+
+                TextColumn::make('work_start_date')
+                    ->label('Job Start Date')
+                    ->date('M d, Y')
+                    ->sortable()
+                    ->toggleable(),
+
+                TextColumn::make('work_status')
+                    ->label('Work Status')
+                    ->state(function (Therapist $record): string {
+                        if (!$record->work_start_date) {
+                            return 'Active';
+                        }
+
+                        $startDate = \Carbon\Carbon::parse($record->work_start_date);
+                        
+                        if ($startDate->isFuture()) {
+                            return 'Starts ' . $startDate->format('M d, Y');
+                        }
+
+                        if ($startDate->isToday()) {
+                            return 'Starting Today';
+                        }
+
+                        return 'Active';
+                    })
+                    ->badge()
+                    ->color(function (Therapist $record): string {
+                        if (!$record->work_start_date) {
+                            return 'success';
+                        }
+
+                        $startDate = \Carbon\Carbon::parse($record->work_start_date);
+                        
+                        if ($startDate->isFuture()) {
+                            return 'warning'; // Future start date
+                        }
+
+                        if ($startDate->isToday()) {
+                            return 'info'; // Starting today
+                        }
+
+                        return 'success'; // Currently active
+                    })
+                    ->sortable(false)
+                    ->toggleable(),
                     
                 TextColumn::make('services.title')
                     ->badge()
@@ -132,6 +186,50 @@ class TherapistResource extends Resource
                     ->trueLabel('Only Active')
                     ->falseLabel('Only Inactive')
                     ->nullable(),
+
+                Tables\Filters\Filter::make('work_start_date')
+                    ->form([
+                        DatePicker::make('started_from')
+                            ->label('Job Start From'),
+                        DatePicker::make('started_until')
+                            ->label('Job Start Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['started_from'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('work_start_date', '>=', $date),
+                            )
+                            ->when(
+                                $data['started_until'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('work_start_date', '<=', $date),
+                            );
+                    }),
+
+                Tables\Filters\SelectFilter::make('work_status')
+                    ->label('Work Status')
+                    ->options([
+                        'future' => 'Future Start Date',
+                        'today' => 'Starting Today',
+                        'active' => 'Currently Active',
+                        'no_date' => 'No Start Date',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        if (!$data['value']) {
+                            return $query;
+                        }
+
+                        $status = $data['value'];
+                        $now = now();
+
+                        return match ($status) {
+                            'future' => $query->where('work_start_date', '>', $now),
+                            'today' => $query->whereDate('work_start_date', $now->toDateString()),
+                            'active' => $query->where('work_start_date', '<=', $now)->whereNotNull('work_start_date'),
+                            'no_date' => $query->whereNull('work_start_date'),
+                            default => $query,
+                        };
+                    }),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

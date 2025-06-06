@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Carbon\Carbon;
 
 class Therapist extends Model
 {
@@ -17,11 +18,13 @@ class Therapist extends Model
         'phone',
         'image',
         'bio',
+        'work_start_date',
         'status',
     ];
 
     protected $casts = [
         'status' => 'boolean',
+        'work_start_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -98,6 +101,30 @@ class Therapist extends Model
                 return ucfirst($day);
             })
             ->toArray();
+    }
+
+    /**
+     * Calculate years of experience based on work start date
+     */
+    public function getYearsOfExperienceAttribute(): ?int
+    {
+        if (!$this->work_start_date) {
+            return null;
+        }
+
+        return Carbon::parse($this->work_start_date)->diffInYears(Carbon::now());
+    }
+
+    /**
+     * Get formatted work start date
+     */
+    public function getFormattedWorkStartDateAttribute(): ?string
+    {
+        if (!$this->work_start_date) {
+            return null;
+        }
+
+        return Carbon::parse($this->work_start_date)->format('M Y');
     }
 
     public function getImageUrlAttribute()

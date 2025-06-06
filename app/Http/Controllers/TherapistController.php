@@ -19,20 +19,20 @@ class TherapistController extends Controller
     {
         try {
             Log::info("Fetching therapist details for ID: " . $id);
-    
+
             // Find the therapist with relationships
             $therapist = Therapist::with([
                 'availabilities' => function ($query) {
                     $query->where('is_active', true)
-                          ->orderBy('day_of_week')
-                          ->orderBy('start_time');
+                        ->orderBy('day_of_week')
+                        ->orderBy('start_time');
                 },
                 'services' => function ($query) {
                     $query->where('services.status', true)
-                          ->select('services.id', 'services.title', 'services.price', 'services.duration');
+                        ->select('services.id', 'services.title', 'services.price', 'services.duration');
                 }
             ])->find($id);
-    
+
             if (!$therapist) {
                 Log::warning("Therapist not found: " . $id);
                 return response()->json([
@@ -40,9 +40,17 @@ class TherapistController extends Controller
                     'message' => 'Therapist not found'
                 ], 404);
             }
-    
+
             Log::info("Found therapist: " . $therapist->name);
-    
+
+            // Check work status
+            $hasStartedWorking = $this->hasTherapistStartedWorking($therapist->work_start_date);
+            $workStatus = $this->getWorkStatus($therapist->work_start_date);
+
+            // Get total booking count for this therapist
+            $totalBookingCount = $this->getTotalBookingCount($therapist->id);
+
+
             // Format availability schedule
             $schedule = $therapist->availabilities->map(function ($availability) {
                 return [
@@ -52,7 +60,7 @@ class TherapistController extends Controller
                     'is_active' => $availability->is_active,
                 ];
             });
-    
+
             // Get available services
             $services = $therapist->services->map(function ($service) {
                 return [
@@ -62,11 +70,11 @@ class TherapistController extends Controller
                     'duration' => $service->duration,
                 ];
             });
-    
-            // Get some availability stats
-            $availableDates = $this->getTherapistAvailableDates($therapist->id, 3);
-            $todaySlots = $this->countAvailableSlotsToday($therapist->id, 60); // Default 60-minute slots
-    
+
+            // Get some availability stats (only if started working)
+            $availableDates = $hasStartedWorking ? $this->getTherapistAvailableDates($therapist->id, 3) : [];
+            $todaySlots = $hasStartedWorking ? $this->countAvailableSlotsToday($therapist->id, 60) : 0;
+
             // Format the therapist data
             $therapistData = [
                 'id' => $therapist->id,
@@ -75,46 +83,62 @@ class TherapistController extends Controller
                 'phone' => $therapist->phone,
                 'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,
                 'bio' => $therapist->bio,
+                'work_start_date' => $therapist->work_start_date
+                    ? Carbon::parse($therapist->work_start_date)->format('Y-m-d')
+                    : null,
+                'has_started_working' => $hasStartedWorking,
+                'work_status' => $workStatus,
                 'status' => $therapist->status,
+                'total_booking_count' => $totalBookingCount,
                 'created_at' => $therapist->created_at->toDateTimeString(),
                 'updated_at' => $therapist->updated_at->toDateTimeString(),
-                
+
                 // Schedule information
                 'schedule' => $schedule,
                 'available_days' => $this->formatAvailableDays($schedule),
-                
+
                 // Services they provide
                 'services' => $services,
-                
+
                 // Availability stats
                 'availability_stats' => [
                     'available_dates_count' => count($availableDates),
                     'today_slots_count' => $todaySlots,
                     'next_available_dates' => array_slice($availableDates, 0, 7), // Next 7 available dates
                 ],
-                
-                // Professional info (you can add these fields to your therapist table if needed)
-                'specializations' => [], // Add if you have this data
-                'certifications' => [], // Add if you have this data
-                'experience_years' => null, // Add if you have this data
-                'languages' => [], // Add if you have this data
             ];
-    
+
             return response()->json([
                 'success' => true,
                 'data' => $therapistData,
                 'message' => 'Therapist details retrieved successfully'
             ]);
-    
+
         } catch (\Exception $e) {
             Log::error("Error fetching therapist details: " . $e->getMessage());
             Log::error("Stack trace: " . $e->getTraceAsString());
-    
+
             return response()->json([
                 'success' => false,
                 'message' => 'An error occurred while retrieving therapist details',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
+        }
+    }
+
+    private function getTotalBookingCount($therapistId, $statuses = ['confirmed', 'pending', 'completed'])
+    {
+        try {
+            $count = Booking::where('therapist_id', $therapistId)
+                ->whereIn('status', $statuses)
+                ->count();
+
+            Log::info("Total booking count for therapist {$therapistId}: {$count}");
+            return $count;
+
+        } catch (\Exception $e) {
+            Log::error('Error getting total booking count for therapist ' . $therapistId . ': ' . $e->getMessage());
+            return 0;
         }
     }
 
@@ -183,7 +207,10 @@ class TherapistController extends Controller
                 ], 400);
             }
 
-            Log::info("Fetching bookings for therapist {$therapistId} on {$date}");
+            // Check if therapist has started working by the requested date
+            $hasStartedByDate = $this->hasTherapistStartedWorkingByDate($therapist->work_start_date, $date);
+
+            Log::info("Fetching bookings for therapist {$therapistId} on {$date}. Has started by date: " . ($hasStartedByDate ? 'Yes' : 'No'));
 
             // Get bookings for the therapist on the specified date
             $bookings = Booking::where('therapist_id', $therapistId)
@@ -197,20 +224,20 @@ class TherapistController extends Controller
 
             // Format the booking data for the response
             $formattedBookings = $bookings->map(function ($booking) {
-                // FIXED: Format time as HH:MM string instead of full datetime
+                // Format time as HH:MM string instead of full datetime
                 $timeFormatted = is_string($booking->time)
                     ? $booking->time
                     : Carbon::parse($booking->time)->format('H:i');
 
                 return [
                     'id' => $booking->id,
-                    'date' => $booking->date, // Keep as date
-                    'time' => $timeFormatted, // NOW RETURNS "09:00" format
+                    'date' => $booking->date,
+                    'time' => $timeFormatted,
                     'status' => $booking->status,
                     'service' => [
                         'id' => $booking->service->id,
                         'title' => $booking->service->title,
-                        'duration' => $booking->service->duration ?? 60, // Default to 60 minutes
+                        'duration' => $booking->service->duration ?? 60,
                     ],
                     'customer' => [
                         'name' => $booking->name,
@@ -232,6 +259,10 @@ class TherapistController extends Controller
                 'meta' => [
                     'therapist_id' => (int) $therapistId,
                     'therapist_name' => $therapist->name,
+                    'therapist_work_start_date' => $therapist->work_start_date
+                        ? Carbon::parse($therapist->work_start_date)->format('Y-m-d')
+                        : null,
+                    'has_started_by_date' => $hasStartedByDate,
                     'date' => $date,
                     'total_bookings' => $bookings->count(),
                 ]
@@ -260,8 +291,6 @@ class TherapistController extends Controller
             // Find the service first
             $service = Service::find($serviceId);
 
-            // return($service);
-
             if (!$service) {
                 Log::warning("Service not found: " . $serviceId);
                 return response()->json([
@@ -285,11 +314,25 @@ class TherapistController extends Controller
 
             // Format therapist data with availability information
             $therapistData = $therapists->map(function ($therapist) use ($service) {
-                // Get available dates for the next 3 months
-                $availableDates = $this->getTherapistAvailableDates($therapist->id, 3);
+                // Check if therapist has started working
+                $hasStartedWorking = $this->hasTherapistStartedWorking($therapist->work_start_date);
 
-                // Count available slots for today
-                $todaySlots = $this->countAvailableSlotsToday($therapist->id, $service->duration ?? 60);
+                // Check if therapist will start within next 3 months
+                $willStartWithinThreeMonths = $this->willTherapistStartWithinPeriod($therapist->work_start_date, 3);
+
+                // Get availability data - if they've started OR will start within 3 months
+                $availableDates = [];
+                $todaySlots = 0;
+
+                if ($hasStartedWorking || $willStartWithinThreeMonths) {
+                    // Get available dates for the next 3 months (considering work start date)
+                    $availableDates = $this->getTherapistAvailableDates($therapist->id, 3);
+
+                    // Count available slots for today (only if they've already started)
+                    if ($hasStartedWorking) {
+                        $todaySlots = $this->countAvailableSlotsToday($therapist->id, $service->duration ?? 60);
+                    }
+                }
 
                 // Format schedule data
                 $schedule = $therapist->availabilities->map(function ($availability) {
@@ -301,7 +344,10 @@ class TherapistController extends Controller
                     ];
                 });
 
-                Log::info("Therapist {$therapist->name} - Available dates: " . count($availableDates) . ", Today slots: {$todaySlots}, Schedule items: " . $schedule->count());
+                // Get work status information
+                $workStatus = $this->getWorkStatus($therapist->work_start_date);
+
+                Log::info("Therapist {$therapist->name} - Work Status: {$workStatus}, Has started: " . ($hasStartedWorking ? 'Yes' : 'No') . ", Will start within 3 months: " . ($willStartWithinThreeMonths ? 'Yes' : 'No') . ", Available dates: " . count($availableDates) . ", Today slots: {$todaySlots}, Schedule items: " . $schedule->count());
 
                 return [
                     'id' => $therapist->id,
@@ -310,6 +356,12 @@ class TherapistController extends Controller
                     'phone' => $therapist->phone,
                     'image' => $therapist->image ? url('storage/' . $therapist->image) : null,
                     'bio' => $therapist->bio,
+                    'work_start_date' => $therapist->work_start_date
+                        ? Carbon::parse($therapist->work_start_date)->format('Y-m-d')
+                        : null,
+                    'has_started_working' => $hasStartedWorking,
+                    'will_start_within_three_months' => $willStartWithinThreeMonths,
+                    'work_status' => $workStatus,
                     'status' => $therapist->status,
                     'available_slots_count' => $todaySlots,
                     'available_dates_count' => count($availableDates),
@@ -334,13 +386,81 @@ class TherapistController extends Controller
         }
     }
 
+    private function willTherapistStartWithinPeriod($workStartDate, $months = 3): bool
+    {
+        if (!$workStartDate) {
+            return false; // No start date means they're already active
+        }
+
+        $startDate = Carbon::parse($workStartDate);
+        $now = Carbon::now();
+        $futureLimit = $now->copy()->addMonths($months);
+
+        // Check if start date is in the future AND within the specified period
+        return $startDate->isFuture() && $startDate->lte($futureLimit);
+    }
+
+    private function hasTherapistStartedWorking($workStartDate): bool
+    {
+        if (!$workStartDate) {
+            return true; // No start date means available
+        }
+
+        $startDate = Carbon::parse($workStartDate);
+        $now = Carbon::now();
+
+        return $startDate->isPast() || $startDate->isToday();
+    }
+
+    private function hasTherapistStartedWorkingByDate($workStartDate, $checkDate): bool
+    {
+        if (!$workStartDate) {
+            return true; // No start date means available
+        }
+
+        $startDate = Carbon::parse($workStartDate);
+        $targetDate = Carbon::parse($checkDate);
+
+        return $startDate->lte($targetDate);
+    }
+
+
+
+    /**
+     * Helper method to get work status text
+     */
+    private function getWorkStatus($workStartDate): string
+    {
+        if (!$workStartDate) {
+            return 'Active';
+        }
+
+        $startDate = Carbon::parse($workStartDate);
+
+        if ($startDate->isFuture()) {
+            return 'Starts ' . $startDate->format('M d, Y');
+        }
+
+        if ($startDate->isToday()) {
+            return 'Starting Today';
+        }
+
+        return 'Active';
+    }
+
+
+    /**
+     * Format available days helper
+     */
+
+
     /**
      * Get available dates for a specific therapist
      */
     private function getTherapistAvailableDates($therapistId, $months = 3)
     {
         try {
-            // Get therapist with availability
+            // Get therapist with availability and work start date
             $therapist = Therapist::with([
                 'availabilities' => function ($query) {
                     $query->where('is_active', true);
@@ -357,12 +477,30 @@ class TherapistController extends Controller
 
             Log::info("Therapist {$therapistId} available days: " . implode(', ', $availableDaysOfWeek));
 
-            // Generate available dates for the next X months
-            $availableDates = [];
+            // Determine the start date for availability calculation
             $startDate = Carbon::today();
-            $endDate = $startDate->copy()->addMonths($months);
 
+            if ($therapist->work_start_date) {
+                $workStartDate = Carbon::parse($therapist->work_start_date);
+
+                // If work start date is in the future, start availability from that date
+                if ($workStartDate->isFuture()) {
+                    $startDate = $workStartDate;
+                    Log::info("Therapist {$therapistId} starts work on {$workStartDate->toDateString()}, calculating availability from that date");
+                }
+                // If work start date is in the past but after today, use work start date
+                elseif ($workStartDate->gt(Carbon::today())) {
+                    $startDate = $workStartDate;
+                }
+            }
+
+            // Calculate end date (3 months from today, not from start date)
+            $endDate = Carbon::today()->addMonths($months);
+
+            // Generate available dates within the period
+            $availableDates = [];
             $currentDate = $startDate->copy();
+
             while ($currentDate->lte($endDate)) {
                 $dayOfWeek = strtolower($currentDate->format('l'));
 
@@ -374,7 +512,7 @@ class TherapistController extends Controller
                 $currentDate->addDay();
             }
 
-            Log::info("Generated " . count($availableDates) . " available dates for therapist {$therapistId}");
+            Log::info("Generated " . count($availableDates) . " available dates for therapist {$therapistId} from {$startDate->toDateString()} to {$endDate->toDateString()}");
             return $availableDates;
 
         } catch (\Exception $e) {
@@ -383,17 +521,29 @@ class TherapistController extends Controller
         }
     }
 
+
     /**
      * Count available slots for today
      */
     private function countAvailableSlotsToday($therapistId, $serviceDuration)
     {
-        Log::info($serviceDuration);
         try {
             $today = Carbon::today()->toDateString();
             $dayOfWeek = strtolower(Carbon::today()->format('l'));
 
             Log::info("Checking slots for therapist {$therapistId} on {$today} ({$dayOfWeek})");
+
+            // Get therapist to check work start date
+            $therapist = Therapist::find($therapistId);
+            if (!$therapist) {
+                return 0;
+            }
+
+            // Check if therapist has started working
+            if (!$this->hasTherapistStartedWorking($therapist->work_start_date)) {
+                Log::info("Therapist {$therapistId} hasn't started working yet");
+                return 0;
+            }
 
             // Get therapist availability for today
             $availabilities = TherapistAvailability::where('therapist_id', $therapistId)
@@ -417,8 +567,8 @@ class TherapistController extends Controller
 
             Log::info("Found " . $existingBookings->count() . " existing bookings for therapist {$therapistId} on {$today}");
 
-            $totalSlots = 0; // ✅ This will accumulate slots from all availability windows
-            $intervalMinutes = $serviceDuration; // Time slot intervals
+            $totalSlots = 0;
+            $intervalMinutes = $serviceDuration;
             $currentDateTime = Carbon::now();
             $todayDate = $currentDateTime->toDateString();
 
@@ -426,7 +576,7 @@ class TherapistController extends Controller
                 $startTime = Carbon::parse($availability->start_time);
                 $endTime = Carbon::parse($availability->end_time);
                 $currentTime = $startTime->copy();
-                $windowSlots = 0; // ✅ FIXED: Initialize window counter for each availability window
+                $windowSlots = 0;
 
                 // If it's today, start from current time or availability start time, whichever is later
                 if ($today === $todayDate) {
@@ -455,9 +605,6 @@ class TherapistController extends Controller
                     $slotEnd = $slotStart->copy()->addMinutes($serviceDuration);
                     $isAvailable = true;
 
-                    // ✅ REMOVED: Redundant past-time check since we already handle this above
-                    // The currentTime is already set to appropriate time based on current time
-
                     // Check against existing bookings
                     foreach ($existingBookings as $booking) {
                         $bookingStart = Carbon::parse($booking->time);
@@ -473,20 +620,19 @@ class TherapistController extends Controller
                     }
 
                     if ($isAvailable) {
-                        $windowSlots++; // ✅ FIXED: Increment the window counter
+                        $windowSlots++;
                         Log::debug("Available slot: {$slotStart->format('H:i')}-{$slotEnd->format('H:i')}");
                     }
 
                     $currentTime->addMinutes($intervalMinutes);
                 }
 
-                // ✅ FIXED: Add window slots to total after processing each availability window
                 $totalSlots += $windowSlots;
                 Log::info("Window {$startTime->format('H:i')}-{$endTime->format('H:i')} has {$windowSlots} available slots");
             }
 
             Log::info("Total available slots for therapist {$therapistId} today: {$totalSlots}");
-            return $totalSlots; // ✅ FIXED: Now returns the correct total
+            return $totalSlots;
         } catch (\Exception $e) {
             Log::error('Error counting available slots for therapist ' . $therapistId . ': ' . $e->getMessage());
             return 0;

@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('phone');
             $table->string('image')->nullable();
             $table->text('bio')->nullable();
+            $table->date('work_start_date')->nullable();
             $table->boolean('status')->default(true);
             $table->timestamps();
         });

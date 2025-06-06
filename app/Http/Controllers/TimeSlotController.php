@@ -100,7 +100,7 @@ class TherapistController extends Controller
      * Get available dates for a specific therapist
      * MOVED FROM TimeSlotController to fix the issue
      */
-    private function getTherapistAvailableDates($therapistId, $months = 3)
+    private function getTherapistAvailableDates($therapistId, $months = 3, $workStartDate = null)
     {
         try {
             // Use the same method as TimeSlotController but with proper relationship loading
@@ -120,7 +120,7 @@ class TherapistController extends Controller
             
             // Generate available dates for the next X months
             $availableDates = [];
-            $startDate = Carbon::today();
+            $startDate = $workStartDate ? Carbon::parse($workStartDate) : Carbon::today();
             $endDate = $startDate->copy()->addMonths($months);
             
             $currentDate = $startDate->copy();
