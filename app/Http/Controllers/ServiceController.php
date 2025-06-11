@@ -10,16 +10,20 @@ use App\Models\Booking;
 
 class ServiceController extends Controller
 {
-    public function getServicesForTreatment($treatmentId)
+    public function getServicesForTreatment($treatmentId, $locationId = null)
     {
-        // Fetch services related to the treatment
-        $services = Service::where('treatment_id', $treatmentId)->get();
+        $query = Service::where('treatment_id', $treatmentId);
 
-        // Check if services exist and return them, else return a 404 message
+        // if ($locationId) {
+        //     $query->where('location_id', $locationId);
+        // }
+
+        $services = $query->get();
+
         if ($services->isEmpty()) {
             return response()->json([
                 'success' => false,
-                'message' => 'No services found for this treatment.'
+                'message' => 'No services found for this treatment in the selected location.'
             ], 404);
         }
 
@@ -30,31 +34,31 @@ class ServiceController extends Controller
     }
 
     public function getServiceWithBookingCount($serviceId)
-{
-    // Find the service
-    $service = Service::with('treatment')->find($serviceId);
-    
-    if (!$service) {
+    {
+        // Find the service
+        $service = Service::with('treatment')->find($serviceId);
+
+        if (!$service) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Service not found.'
+            ], 404);
+        }
+
+        // Get booking count
+        $bookingCount = Booking::where('service_id', $serviceId)
+            ->where('status', '!=', 'cancelled')
+            ->count();
+
+        // Include the booking count with the service data
+        $serviceData = $service->toArray();
+        $serviceData['booking_count'] = $bookingCount;
+
         return response()->json([
-            'success' => false,
-            'message' => 'Service not found.'
-        ], 404);
+            'success' => true,
+            'data' => $serviceData
+        ], 200);
     }
-    
-    // Get booking count
-    $bookingCount = Booking::where('service_id', $serviceId)
-        ->where('status', '!=', 'cancelled')
-        ->count();
-    
-    // Include the booking count with the service data
-    $serviceData = $service->toArray();
-    $serviceData['booking_count'] = $bookingCount;
-    
-    return response()->json([
-        'success' => true,
-        'data' => $serviceData
-    ], 200);
-}
 
     public function detail($id)
     {

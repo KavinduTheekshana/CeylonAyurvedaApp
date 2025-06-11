@@ -35,18 +35,26 @@ class TherapistResource extends Resource
                 TextInput::make('name')
                     ->required()
                     ->maxLength(255),
-                    
+
                 TextInput::make('email')
                     ->email()
                     ->required()
                     ->unique(ignoreRecord: true)
                     ->maxLength(255),
-                    
+
+                Select::make('locations')
+                    ->relationship('locations', 'name')
+                    ->multiple()
+                    ->preload()
+                    ->searchable()
+                    ->required()
+                    ->columnSpanFull(),
+
                 TextInput::make('phone')
                     ->required()
                     ->tel()
                     ->maxLength(255),
-                    
+
                 FileUpload::make('image')
                     ->directory('therapists')
                     ->image()
@@ -54,7 +62,7 @@ class TherapistResource extends Resource
                     ->imageCropAspectRatio('1:1')
                     ->imageResizeTargetWidth('300')
                     ->imageResizeTargetHeight('300'),
-                    
+
                 Textarea::make('bio')
                     ->maxLength(500)
                     ->columnSpanFull(),
@@ -65,11 +73,11 @@ class TherapistResource extends Resource
                     ->displayFormat('d/m/Y')
                     ->format('Y-m-d')
                     ->helperText('Select when the therapist starts/started this job'),
-                    
+
                 Toggle::make('status')
                     ->label('Active')
                     ->default(true),
-                    
+
                 Select::make('services')
                     ->relationship('services', 'title')
                     ->multiple()
@@ -87,15 +95,15 @@ class TherapistResource extends Resource
                 ImageColumn::make('image')
                     ->circular()
                     ->size(40),
-                    
+
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
-                    
+
                 TextColumn::make('email')
                     ->searchable()
                     ->sortable(),
-                    
+
                 TextColumn::make('phone')
                     ->searchable(),
 
@@ -113,7 +121,7 @@ class TherapistResource extends Resource
                         }
 
                         $startDate = \Carbon\Carbon::parse($record->work_start_date);
-                        
+
                         if ($startDate->isFuture()) {
                             return 'Starts ' . $startDate->format('M d, Y');
                         }
@@ -131,7 +139,7 @@ class TherapistResource extends Resource
                         }
 
                         $startDate = \Carbon\Carbon::parse($record->work_start_date);
-                        
+
                         if ($startDate->isFuture()) {
                             return 'warning'; // Future start date
                         }
@@ -144,12 +152,13 @@ class TherapistResource extends Resource
                     })
                     ->sortable(false)
                     ->toggleable(),
-                    
+
                 TextColumn::make('services.title')
                     ->badge()
                     ->color('primary')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
 
                 TextColumn::make('availabilities_count')
                     ->label('Availability Slots')
@@ -166,15 +175,15 @@ class TherapistResource extends Resource
                             ->pluck('day_of_week')
                             ->map(fn($day) => substr(ucfirst($day), 0, 3))
                             ->toArray();
-                        
+
                         return implode(', ', $days);
                     })
                     ->badge()
                     ->color('info'),
-                    
+
                 BooleanColumn::make('status')
                     ->label('Active'),
-                    
+
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -198,11 +207,11 @@ class TherapistResource extends Resource
                         return $query
                             ->when(
                                 $data['started_from'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('work_start_date', '>=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('work_start_date', '>=', $date),
                             )
                             ->when(
                                 $data['started_until'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('work_start_date', '<=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('work_start_date', '<=', $date),
                             );
                     }),
 
@@ -241,14 +250,14 @@ class TherapistResource extends Resource
                 ]),
             ]);
     }
-    
+
     public static function getRelations(): array
     {
         return [
             AvailabilitiesRelationManager::class,
         ];
     }
-    
+
     public static function getPages(): array
     {
         return [
@@ -256,5 +265,5 @@ class TherapistResource extends Resource
             'create' => Pages\CreateTherapist::route('/create'),
             'edit' => Pages\EditTherapist::route('/{record}/edit'),
         ];
-    }    
+    }
 }

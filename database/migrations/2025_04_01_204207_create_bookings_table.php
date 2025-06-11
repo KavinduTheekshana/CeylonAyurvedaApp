@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('user_id')->nullable(); // Nullable for guest bookings
             $table->unsignedBigInteger('service_id');
+            $table->foreignId('location_id')->nullable()->constrained()->onDelete('set null');
             $table->date('date');
             $table->time('time');
             $table->string('name');

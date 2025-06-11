@@ -127,6 +127,11 @@ class Therapist extends Model
         return Carbon::parse($this->work_start_date)->format('M Y');
     }
 
+    public function locations()
+    {
+        return $this->belongsToMany(Location::class)->withTimestamps();
+    }
+
     public function getImageUrlAttribute()
     {
         if ($this->image) {

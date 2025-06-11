@@ -32,18 +32,22 @@ class Service extends Model
     {
         return $this->hasMany(Booking::class);
     }
+    public function location()
+    {
+        return $this->belongsTo(Location::class);
+    }
 
     // public function therapists(): BelongsToMany
     // {
     //     return $this->belongsToMany(Therapist::class, 'therapist_service');
     // }
     public function therapists()
-{
-    return $this->belongsToMany(
-        Therapist::class,
-        'service_therapist', // Specify the correct table name
-        'service_id',        // Foreign key for service
-        'therapist_id'       // Foreign key for therapist
-    )->withTimestamps();
-}
+    {
+        return $this->belongsToMany(
+            Therapist::class,
+            'service_therapist', // Specify the correct table name
+            'service_id',        // Foreign key for service
+            'therapist_id'       // Foreign key for therapist
+        )->withTimestamps();
+    }
 }

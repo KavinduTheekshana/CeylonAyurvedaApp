@@ -8,9 +8,17 @@ use Illuminate\Http\Request;
 
 class TreatmentController extends Controller
 {
-    public function index()
+    public function index($locationId = null)
     {
-        $treatments = Treatment::where('status', 1)->get();
+        $query = Treatment::where('status', 1);
+
+        if ($locationId) {
+            $query->whereHas('services', function ($q) use ($locationId) {
+                $q->where('location_id', $locationId);
+            });
+        }
+
+        $treatments = $query->get();
 
         return response()->json([
             'success' => true,

@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\TreatmentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\DeleteAccountController;
+use App\Http\Controllers\LocationController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\TherapistController;
@@ -33,9 +34,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 });
 
-// Treatment routes
-Route::get('/treatments', [TreatmentController::class, 'index']);
-Route::get('/treatments/{id}', [TreatmentController::class, 'show']);
+
 
 // Service routes
 Route::get('/services', [ServiceController::class, 'index']);
@@ -55,7 +54,7 @@ Route::post('/timeslots/check-availability', [TimeSlotController::class, 'checkS
 Route::get('/therapists/{therapistId}/workload', [TimeSlotController::class, 'getTherapistWorkload']);
 
 // User addresses
-Route::middleware('auth:sanctum')->group(function() {
+Route::middleware('auth:sanctum')->group(function () {
     Route::get('/addresses', [AddressController::class, 'index']);
     Route::post('/addresses', [AddressController::class, 'store']);
     Route::put('/addresses/{id}', [AddressController::class, 'update']);
@@ -77,7 +76,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/bookings/show/{id}', [BookingController::class, 'showBooking']);
     Route::post('/bookings/{id}/cancel', [BookingController::class, 'cancelBooking']);
 
-  
+
 
     // Delete account route
     Route::post('/account/delete', [DeleteAccountController::class, 'deleteAccount']);
@@ -93,3 +92,15 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
 
 Route::get('/therapists/{therapistId}/bookings', [TherapistController::class, 'getTherapistBookings']);
 Route::get('/therapists/details/{id}', [TherapistController::class, 'show']);
+
+
+// Treatment routes
+// Route::get('/treatments', [TreatmentController::class, 'index']);
+Route::get('/treatments/{id}', [TreatmentController::class, 'show']);
+// routes/api.php - Add these routes
+Route::get('locations', [LocationController::class, 'index']);
+Route::get('locations/{id}', [LocationController::class, 'show']);
+
+// Update existing routes to include location filtering
+Route::get('treatments/{location_id?}', [TreatmentController::class, 'index']);
+Route::get('services/{treatmentId}/{location_id?}', [ServiceController::class, 'getServicesForTreatment']);

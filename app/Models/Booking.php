@@ -44,6 +44,10 @@ class Booking extends Model
     {
         return $this->belongsTo(Service::class);
     }
+    public function location()
+    {
+        return $this->belongsTo(Location::class);
+    }
 
     public function scopeStatus($query, $status)
     {
@@ -71,7 +75,7 @@ class Booking extends Model
         return $this->canBeCancelled();
     }
 
-     /**
+    /**
      * Get the therapist of the booking.
      */
     public function therapist()
