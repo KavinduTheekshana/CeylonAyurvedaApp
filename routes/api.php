@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Controllers\AddressController;
+use App\Http\Controllers\Api\ContactMessageController;
 use App\Http\Controllers\Api\TreatmentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BookingController;
+use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DeleteAccountController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\PasswordResetController;
@@ -44,6 +46,7 @@ Route::get('/services/detail/{id}', [ServiceController::class, 'detail']);
 
 // Therapist routes
 Route::get('/services/{serviceId}/therapists', [TherapistController::class, 'getServiceTherapists']);
+
 
 // Time slots and availability routes
 Route::get('/timeslots', [TimeSlotController::class, 'getAvailableSlots']);
@@ -104,3 +107,17 @@ Route::get('locations/{id}', [LocationController::class, 'show']);
 // Update existing routes to include location filtering
 Route::get('treatments/{location_id?}', [TreatmentController::class, 'index']);
 Route::get('services/{treatmentId}/{location_id?}', [ServiceController::class, 'getServicesForTreatment']);
+
+
+Route::prefix('contact')->group(function () {
+    // Public route for submitting messages (both guest and authenticated users)
+    Route::post('/message', [ContactMessageController::class, 'store']);
+    
+    // Protected routes for authenticated users
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/messages', [ContactMessageController::class, 'getUserMessages']);
+        Route::get('/messages/{id}', [ContactMessageController::class, 'show']);
+    });
+});
+
+

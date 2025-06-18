@@ -283,14 +283,21 @@ class TherapistController extends Controller
      * Get therapists assigned to a specific service with availability data
      * Public endpoint for booking flow
      */
-    public function getServiceTherapists($serviceId)
+    public function getServiceTherapists($serviceId, Request $request)
     {
         try {
             Log::info("Fetching therapists for service ID: " . $serviceId);
-
+    
+            // Get location_id from request parameter
+            $locationId = $request->query('location_id');
+            
+            if ($locationId) {
+                Log::info("Filtering therapists by location ID: " . $locationId);
+            }
+    
             // Find the service first
             $service = Service::find($serviceId);
-
+    
             if (!$service) {
                 Log::warning("Service not found: " . $serviceId);
                 return response()->json([
@@ -298,42 +305,51 @@ class TherapistController extends Controller
                     'message' => 'Service not found'
                 ], 404);
             }
-
+    
             // Get therapists with proper relationship and their availability
-            $therapists = $service->therapists()
+            // Filter by location if location_id is provided
+            $therapistsQuery = $service->therapists()
                 ->where('status', true)
                 ->with([
                     'availabilities' => function ($query) {
                         $query->where('is_active', true)->orderBy('day_of_week')->orderBy('start_time');
                     }
-                ])
-                ->orderBy('name')
-                ->get();
-
-            Log::info("Found " . $therapists->count() . " therapists for service " . $serviceId);
-
+                ]);
+    
+            // Add location filter if location_id is provided
+            if ($locationId) {
+                $therapistsQuery->whereHas('locations', function ($query) use ($locationId) {
+                    $query->where('locations.id', $locationId);
+                });
+            }
+    
+            $therapists = $therapistsQuery->orderBy('name')->get();
+    
+            Log::info("Found " . $therapists->count() . " therapists for service " . $serviceId . 
+                     ($locationId ? " in location " . $locationId : ""));
+    
             // Format therapist data with availability information
             $therapistData = $therapists->map(function ($therapist) use ($service) {
                 // Check if therapist has started working
                 $hasStartedWorking = $this->hasTherapistStartedWorking($therapist->work_start_date);
-
+    
                 // Check if therapist will start within next 3 months
                 $willStartWithinThreeMonths = $this->willTherapistStartWithinPeriod($therapist->work_start_date, 3);
-
+    
                 // Get availability data - if they've started OR will start within 3 months
                 $availableDates = [];
                 $todaySlots = 0;
-
+    
                 if ($hasStartedWorking || $willStartWithinThreeMonths) {
                     // Get available dates for the next 3 months (considering work start date)
                     $availableDates = $this->getTherapistAvailableDates($therapist->id, 3);
-
+    
                     // Count available slots for today (only if they've already started)
                     if ($hasStartedWorking) {
                         $todaySlots = $this->countAvailableSlotsToday($therapist->id, $service->duration ?? 60);
                     }
                 }
-
+    
                 // Format schedule data
                 $schedule = $therapist->availabilities->map(function ($availability) {
                     return [
@@ -343,12 +359,12 @@ class TherapistController extends Controller
                         'is_active' => $availability->is_active,
                     ];
                 });
-
+    
                 // Get work status information
                 $workStatus = $this->getWorkStatus($therapist->work_start_date);
-
+    
                 Log::info("Therapist {$therapist->name} - Work Status: {$workStatus}, Has started: " . ($hasStartedWorking ? 'Yes' : 'No') . ", Will start within 3 months: " . ($willStartWithinThreeMonths ? 'Yes' : 'No') . ", Available dates: " . count($availableDates) . ", Today slots: {$todaySlots}, Schedule items: " . $schedule->count());
-
+    
                 return [
                     'id' => $therapist->id,
                     'name' => $therapist->name,
@@ -368,16 +384,16 @@ class TherapistController extends Controller
                     'schedule' => $schedule
                 ];
             });
-
+    
             return response()->json([
                 'success' => true,
                 'data' => $therapistData
             ]);
-
+    
         } catch (\Exception $e) {
             Log::error("Error fetching therapists: " . $e->getMessage());
             Log::error("Stack trace: " . $e->getTraceAsString());
-
+    
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch therapists',
