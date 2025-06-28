@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -55,5 +56,20 @@ class Location extends Model
     public function getImageUrlAttribute()
     {
         return $this->image ? asset('storage/' . $this->image) : null;
+    }
+
+    public function investments()
+    {
+        return $this->hasMany(Investment::class);
+    }
+
+    public function locationInvestment()
+    {
+        return $this->hasOne(LocationInvestment::class);
+    }
+
+    public function getTotalInvestedAttribute()
+    {
+        return $this->investments()->where('status', 'completed')->sum('amount');
     }
 }

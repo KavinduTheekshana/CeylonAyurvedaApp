@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\AddressController;
 use App\Http\Controllers\Api\ContactMessageController;
-use App\Http\Controllers\Api\InvestmentController;
 use App\Http\Controllers\Api\TreatmentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BookingController;
@@ -11,11 +10,9 @@ use App\Http\Controllers\DeleteAccountController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\ServiceController;
-use App\Http\Controllers\SocialAuthController;
 use App\Http\Controllers\TherapistController;
 use App\Http\Controllers\TimeSlotController;
 use App\Http\Controllers\UserController;
-use App\Http\Controllers\WebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -24,7 +21,6 @@ Route::post('user/save', [UserController::class, 'register']);
 Route::post('/verify-email', [UserController::class, 'verifyEmail']);
 Route::post('/resend-verification', [UserController::class, 'resendVerificationCode']);
 Route::post('/login', [UserController::class, 'login']);
-Route::post('/auth/social/login', [SocialAuthController::class, 'socialLogin']);
 
 // Password Reset Routes
 Route::post('/forgot-password', [PasswordResetController::class, 'forgotPassword']);
@@ -116,7 +112,7 @@ Route::get('services/{treatmentId}/{location_id?}', [ServiceController::class, '
 Route::prefix('contact')->group(function () {
     // Public route for submitting messages (both guest and authenticated users)
 
-
+    
     // Protected routes for authenticated users
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/message', [ContactMessageController::class, 'store']);
@@ -127,22 +123,3 @@ Route::prefix('contact')->group(function () {
 });
 
 
-// Public routes (no auth required)
-Route::get('/test', [InvestmentController::class, 'test']);
-Route::get('/investments/opportunities', [InvestmentController::class, 'opportunities']);
-Route::get('/investments/locations/{location}', [InvestmentController::class, 'locationDetails']);
-
-// Protected routes (require authentication)
-Route::middleware(['auth:sanctum'])->group(function () {
-    // Investment routes
-    Route::prefix('investments')->group(function () {
-        Route::get('/', [InvestmentController::class, 'index']);
-        Route::post('/', [InvestmentController::class, 'store']);
-        Route::get('/summary', [InvestmentController::class, 'summary']);
-        Route::get('/{investment}', [InvestmentController::class, 'show']);
-        Route::post('/confirm-payment', [InvestmentController::class, 'confirmPayment']);
-    });
-});
-
-// Webhook routes (no auth, but should be protected by webhook signature)
-Route::post('/webhooks/stripe', [WebhookController::class, 'handleStripe']);

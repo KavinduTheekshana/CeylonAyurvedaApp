@@ -65,4 +65,14 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function investments()
+    {
+        return $this->hasMany(Investment::class);
+    }
+
+    public function getTotalInvestedAttribute()
+    {
+        return $this->investments()->where('status', 'completed')->sum('amount');
+    }
 }
