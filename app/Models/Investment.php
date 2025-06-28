@@ -77,4 +77,5 @@ class Investment extends Model
             'invested_at' => now(),
         ]);
     }
+    
 }
