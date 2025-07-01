@@ -74,7 +74,6 @@ class LocationInvestmentResource extends Resource
                                     ->default(10000)
                                     ->minValue(1)
                                     ->maxValue(1000000)
-                                    ->step(100)
                                     ->live()
                                     ->helperText('Maximum amount that can be invested in this location'),
                             ]),

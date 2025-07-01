@@ -129,19 +129,35 @@ Route::prefix('contact')->group(function () {
 
 // Public routes (no auth required)
 Route::get('/test', [InvestmentController::class, 'test']);
-Route::get('/investments/opportunities', [InvestmentController::class, 'opportunities']);
-Route::get('/investments/locations/{location}', [InvestmentController::class, 'locationDetails']);
+Route::get('/investments/opportunities', [InvestmentController::class, 'getOpportunities']);
+Route::get('/locations/{locationId}', [InvestmentController::class, 'getLocationDetails']);
 
 // Protected routes (require authentication)
 Route::middleware(['auth:sanctum'])->group(function () {
+    // Alternative location routes for investment data
+    Route::get('/locations/{locationId}/investments', [LocationController::class, 'getLocationInvestments']);
+
+    // Location-specific investment routes
+    Route::get('/investments/locations/{locationId}', [InvestmentController::class, 'getLocationInvestmentDetails']);
+    Route::get('/investments/locations/{locationId}/investors', [InvestmentController::class, 'getLocationInvestors']);
+   
+     // Investment CRUD
+     Route::post('/investments', [InvestmentController::class, 'createInvestment']);
+     Route::get('/investments', [InvestmentController::class, 'getUserInvestments']);
+     Route::get('/investments/{investmentId}', [InvestmentController::class, 'getInvestmentDetails']);
+
+     // Payment processing
+    Route::post('/investments/confirm-payment', [InvestmentController::class, 'confirmPayment']);
+    Route::post('/investments/{investmentId}/refund', [InvestmentController::class, 'refundInvestment']);
+
     // Investment routes
-    Route::prefix('investments')->group(function () {
-        Route::get('/', [InvestmentController::class, 'index']);
-        Route::post('/', [InvestmentController::class, 'store']);
-        Route::get('/summary', [InvestmentController::class, 'summary']);
-        Route::get('/{investment}', [InvestmentController::class, 'show']);
-        Route::post('/confirm-payment', [InvestmentController::class, 'confirmPayment']);
-    });
+    // Route::prefix('investments')->group(function () {
+    //     Route::get('/', [InvestmentController::class, 'index']);
+    //     Route::post('/', [InvestmentController::class, 'store']);
+    //     Route::get('/summary', [InvestmentController::class, 'getUserSummary']);
+    //     Route::get('/{investment}', [InvestmentController::class, 'show']);
+    //     Route::post('/confirm-payment', [InvestmentController::class, 'confirmPayment']);
+    // });
 });
 
 // Webhook routes (no auth, but should be protected by webhook signature)

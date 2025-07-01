@@ -6,11 +6,17 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\InvestmentRequest;
 use App\Models\Investment;
+use App\Models\InvestmentTransaction;
 use App\Models\Location;
+use App\Models\LocationInvestment;
 use App\Services\InvestmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Stripe\Exception\ApiErrorException;
+use Stripe\PaymentIntent;
 
 class InvestmentController extends Controller
 {
@@ -21,6 +27,189 @@ class InvestmentController extends Controller
         $this->investmentService = $investmentService;
     }
 
+    public function createInvestment(Request $request)
+    {
+        $request->validate([
+            'location_id' => 'required|exists:locations,id',
+            'amount' => 'required|numeric|min:10|max:10000',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            // Set Stripe API key
+            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+
+            $user = auth()->user();
+            $locationId = $request->location_id;
+            $amount = $request->amount;
+
+            // Check if location is open for investment
+            $locationInvestment = LocationInvestment::where('location_id', $locationId)->first();
+
+            if (!$locationInvestment) {
+                // Create location investment record if it doesn't exist
+                $locationInvestment = LocationInvestment::create([
+                    'location_id' => $locationId,
+                    'total_invested' => 0,
+                    'investment_limit' => 10000,
+                    'total_investors' => 0,
+                    'is_open_for_investment' => true,
+                ]);
+            }
+
+            if (!$locationInvestment->is_open_for_investment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This location is currently closed for investment'
+                ], 400);
+            }
+
+            // Check if amount exceeds remaining limit
+            $remainingAmount = $locationInvestment->investment_limit - $locationInvestment->total_invested;
+            if ($amount > $remainingAmount) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Investment amount exceeds the remaining limit of £{$remainingAmount}"
+                ], 400);
+            }
+
+            // Generate unique reference
+            $reference = 'INV-' . strtoupper(Str::random(8));
+
+            // Create investment record
+            $investment = Investment::create([
+                'user_id' => $user->id,
+                'location_id' => $locationId,
+                'amount' => $amount,
+                'currency' => 'GBP',
+                'status' => 'pending',
+                'reference' => $reference,
+                'invested_at' => now(),
+                'notes' => $request->notes,
+            ]);
+
+            // Create Stripe PaymentIntent
+            $paymentIntent = PaymentIntent::create([
+                'amount' => $amount * 100, // Amount in pence
+                'currency' => 'gbp',
+                'metadata' => [
+                    'investment_id' => $investment->id,
+                    'user_id' => $user->id,
+                    'location_id' => $locationId,
+                    'reference' => $reference,
+                ],
+            ]);
+
+            // Update investment with Stripe payment intent ID
+            $investment->update([
+                'stripe_payment_intent_id' => $paymentIntent->id,
+                'stripe_metadata' => json_encode($paymentIntent->toArray()),
+            ]);
+
+            // Create transaction record
+            InvestmentTransaction::create([
+                'investment_id' => $investment->id,
+                'type' => 'payment',
+                'amount' => $amount,
+                'stripe_transaction_id' => $paymentIntent->id,
+                'status' => 'pending',
+                'stripe_response' => json_encode($paymentIntent->toArray()),
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'investment' => $investment,
+                    'payment_intent' => [
+                        'client_secret' => $paymentIntent->client_secret,
+                        'payment_intent_id' => $paymentIntent->id,
+                    ],
+                ]
+            ]);
+        } catch (ApiErrorException $e) {
+            DB::rollback();
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment processing failed',
+                'error' => $e->getMessage()
+            ], 500);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create investment',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getLocationInvestors($locationId)
+    {
+        try {
+            $investors = Investment::where('location_id', $locationId)
+                ->where('status', 'completed')
+                ->with('user')
+                ->orderBy('invested_at', 'desc')
+                ->get()
+                ->map(function ($investment) {
+                    return [
+                        'id' => $investment->id,
+                        'amount' => $investment->amount,
+                        'investor_name' => $investment->user->name,
+                        'invested_at' => $investment->invested_at,
+                        'status' => $investment->status,
+                        'reference' => $investment->reference,
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => $investors
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch investors',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getUserInvestments(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            $perPage = $request->get('per_page', 15);
+
+            $investments = Investment::where('user_id', $user->id)
+                ->with(['location', 'transactions'])
+                ->orderBy('created_at', 'desc')
+                ->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $investments->items(),
+                'pagination' => [
+                    'total' => $investments->total(),
+                    'count' => $investments->count(),
+                    'per_page' => $investments->perPage(),
+                    'current_page' => $investments->currentPage(),
+                    'total_pages' => $investments->lastPage(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch investments',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
     /**
      * Get all investments for authenticated user
@@ -28,7 +217,7 @@ class InvestmentController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = Auth::user();
-        
+
         $investments = $user->investments()
             ->with(['location:id,name,city', 'transactions'])
             ->orderBy('created_at', 'desc')
@@ -94,10 +283,9 @@ class InvestmentController extends Controller
                 ],
                 'message' => 'Investment created successfully'
             ], 201);
-
         } catch (\Exception $e) {
             Log::error('Error creating investment: ' . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
@@ -108,59 +296,52 @@ class InvestmentController extends Controller
     /**
      * Get investment opportunities (locations)
      */
-    public function opportunities(): JsonResponse
+    public function getOpportunities()
     {
         try {
-            Log::info('Fetching investment opportunities');
-            
-            // Get all active locations
-            $locations = Location::where('status', true)->get();
-            Log::info('Found locations count: ' . $locations->count());
-            
-            if ($locations->isEmpty()) {
-                Log::warning('No active locations found in database');
-                return response()->json([
-                    'success' => true,
-                    'data' => [],
-                    'message' => 'No locations found'
-                ]);
-            }
+            $locations = Location::active()
+                ->with('locationInvestment')
+                ->orderBy('name')
+                ->get()
+                ->map(function ($location) {
+                    // Create location investment record if it doesn't exist
+                    if (!$location->locationInvestment) {
+                        $location->locationInvestment = LocationInvestment::create([
+                            'location_id' => $location->id,
+                            'total_invested' => 0,
+                            'investment_limit' => 10000,
+                            'total_investors' => 0,
+                            'is_open_for_investment' => true,
+                        ]);
+                    }
 
-            $opportunities = $locations->map(function ($location) {
-                Log::info('Processing location: ' . $location->name . ' (ID: ' . $location->id . ')');
-                
-                $stats = $this->investmentService->getLocationInvestmentStats($location);
-                Log::info('Location stats for ' . $location->name . ':', $stats);
-                
-                $opportunity = [
-                    'id' => $location->id,
-                    'name' => $location->name,
-                    'city' => $location->city,
-                    'address' => $location->address,
-                    'image' => $location->image,
-                    'description' => $location->description,
-                    'investment_stats' => $stats
-                ];
-                
-                Log::info('Processed opportunity:', $opportunity);
-                return $opportunity;
-            });
+                    $investment = $location->locationInvestment;
 
-            Log::info('Total opportunities processed: ' . $opportunities->count());
+                    return [
+                        'id' => $location->id,
+                        'name' => $location->name,
+                        'city' => $location->city,
+                        'address' => $location->address,
+                        'description' => $location->description,
+                        'image' => $location->image_url,
+                        'total_invested' => (float) $investment->total_invested,
+                        'investment_limit' => (float) $investment->investment_limit,
+                        'total_investors' => (int) $investment->total_investors,
+                        'is_open_for_investment' => (bool) $investment->is_open_for_investment,
+                        'remaining_amount' => (float) $investment->remaining_amount,
+                        'progress_percentage' => (float) $investment->progress_percentage,
+                    ];
+                });
 
             return response()->json([
                 'success' => true,
-                'data' => $opportunities->values()
+                'data' => $locations,
             ]);
-
         } catch (\Exception $e) {
-            Log::error('Error fetching investment opportunities: ' . $e->getMessage());
-            Log::error('Stack trace: ' . $e->getTraceAsString());
-            
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch investment opportunities',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -168,53 +349,75 @@ class InvestmentController extends Controller
     /**
      * Get location investment details
      */
-    public function locationDetails(Location $location): JsonResponse
+    public function getLocationDetails($locationId)
     {
         try {
-            Log::info('Fetching location details for: ' . $location->name);
-            
-            $stats = $this->investmentService->getLocationInvestmentStats($location);
-            
-            // Get recent investments for this location (anonymized)
-            $recentInvestments = Investment::where('location_id', $location->id)
-                ->where('status', 'completed')
+            $location = Location::active()
+                ->with(['locationInvestment'])
+                ->find($locationId);
+
+            if (!$location) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Location not found',
+                ], 404);
+            }
+
+            // Create location investment record if it doesn't exist
+            if (!$location->locationInvestment) {
+                $location->locationInvestment = LocationInvestment::create([
+                    'location_id' => $location->id,
+                    'total_invested' => 0,
+                    'investment_limit' => 10000,
+                    'total_investors' => 0,
+                    'is_open_for_investment' => true,
+                ]);
+            }
+
+            // Get recent investments for this location
+            $recentInvestments = $location->investments()
                 ->with('user:id,name')
-                ->latest('invested_at')
-                ->limit(10)
+                ->where('status', 'completed')
+                ->latest('created_at')
+                ->limit(5)
                 ->get()
                 ->map(function ($investment) {
                     return [
-                        'amount' => $investment->amount,
-                        'investor_name' => substr($investment->user->name, 0, 1) . str_repeat('*', strlen($investment->user->name) - 1),
-                        'invested_at' => $investment->invested_at->format('Y-m-d H:i:s')
+                        'amount' => (float) $investment->amount,
+                        'investor_name' => $investment->user->name ?? 'Anonymous',
+                        'invested_at' => $investment->created_at->toISOString(),
                     ];
                 });
 
-            $response = [
+            $investment = $location->locationInvestment;
+
+            $data = [
                 'id' => $location->id,
                 'name' => $location->name,
                 'city' => $location->city,
                 'address' => $location->address,
-                'image' => $location->image,
                 'description' => $location->description,
-                'investment_stats' => $stats,
-                'recent_investments' => $recentInvestments
+                'image' => $location->image_url,
+                'investment_stats' => [
+                    'total_invested' => (float) $investment->total_invested,
+                    'investment_limit' => (float) $investment->investment_limit,
+                    'remaining_amount' => (float) $investment->remaining_amount,
+                    'progress_percentage' => (float) $investment->progress_percentage,
+                    'total_investors' => (int) $investment->total_investors,
+                    'is_open_for_investment' => (bool) $investment->is_open_for_investment,
+                ],
+                'recent_investments' => $recentInvestments,
             ];
-
-            Log::info('Location details response:', $response);
 
             return response()->json([
                 'success' => true,
-                'data' => $response
+                'data' => $data,
             ]);
-
         } catch (\Exception $e) {
-            Log::error('Error fetching location details: ' . $e->getMessage());
-            
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch location details',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -222,78 +425,149 @@ class InvestmentController extends Controller
     /**
      * Confirm payment (webhook or client confirmation)
      */
-    public function confirmPayment(Request $request): JsonResponse
+    public function confirmPayment(Request $request)
     {
         $request->validate([
-            'payment_intent_id' => 'required|string'
+            'payment_intent_id' => 'required|string',
         ]);
 
         try {
-            $investment = $this->investmentService->handleSuccessfulPayment($request->payment_intent_id);
+            DB::beginTransaction();
+
+            // Retrieve payment intent from Stripe
+            $paymentIntent = PaymentIntent::retrieve($request->payment_intent_id);
+
+            if ($paymentIntent->status !== 'succeeded') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment was not successful'
+                ], 400);
+            }
+
+            // Find investment by payment intent ID
+            $investment = Investment::where('stripe_payment_intent_id', $request->payment_intent_id)->first();
+
+            if (!$investment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Investment not found'
+                ], 404);
+            }
+
+            // Update investment status
+            $investment->update([
+                'status' => 'completed',
+                'invested_at' => now(),
+            ]);
+
+            // Update transaction status
+            InvestmentTransaction::where('investment_id', $investment->id)
+                ->where('stripe_transaction_id', $request->payment_intent_id)
+                ->update([
+                    'status' => 'succeeded',
+                    'stripe_response' => json_encode($paymentIntent->toArray()),
+                ]);
+
+            // Update location investment totals
+            $locationInvestment = LocationInvestment::where('location_id', $investment->location_id)->first();
+            
+            if ($locationInvestment) {
+                $locationInvestment->increment('total_invested', $investment->amount);
+                
+                // Check if this is a new investor for this location
+                $existingInvestorCount = Investment::where('location_id', $investment->location_id)
+                    ->where('user_id', $investment->user_id)
+                    ->where('status', 'completed')
+                    ->count();
+                
+                if ($existingInvestorCount === 1) { // First investment by this user
+                    $locationInvestment->increment('total_investors');
+                }
+
+                // Check if investment limit is reached
+                if ($locationInvestment->total_invested >= $locationInvestment->investment_limit) {
+                    $locationInvestment->update(['is_open_for_investment' => false]);
+                }
+            }
+
+            DB::commit();
 
             return response()->json([
                 'success' => true,
-                'data' => $investment->load('location:id,name'),
-                'message' => 'Investment completed successfully'
+                'data' => [
+                    'investment' => $investment->fresh(),
+                    'message' => 'Investment completed successfully'
+                ]
             ]);
 
-        } catch (\Exception $e) {
-            Log::error('Payment confirmation failed: ' . $e->getMessage());
-            
+        } catch (ApiErrorException $e) {
+            DB::rollback();
             return response()->json([
                 'success' => false,
-                'message' => 'Payment confirmation failed: ' . $e->getMessage()
-            ], 400);
+                'message' => 'Payment confirmation failed',
+                'error' => $e->getMessage()
+            ], 500);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to confirm payment',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
     /**
      * Get user investment summary
      */
-    public function summary(): JsonResponse
+    public function getUserSummary()
     {
         try {
             $user = Auth::user();
-            Log::info('Fetching investment summary for user: ' . $user->id);
-            
-            $totalInvested = $user->investments()->where('status', 'completed')->sum('amount');
-            $totalInvestments = $user->investments()->where('status', 'completed')->count();
-            $pendingInvestments = $user->investments()->where('status', 'pending')->count();
-            
-            $investmentsByLocation = $user->investments()
-                ->where('status', 'completed')
+
+            // Get user's confirmed investments
+            $investments = $user->investments()
                 ->with('location:id,name,city')
-                ->get()
-                ->groupBy('location_id')
-                ->map(function ($investments) {
-                    return [
-                        'location' => $investments->first()->location,
-                        'total_amount' => $investments->sum('amount'),
-                        'investment_count' => $investments->count()
-                    ];
-                })
-                ->values();
+                ->where('status', 'completed')
+                ->get();
 
-            $summary = [
-                'total_invested' => $totalInvested,
-                'total_investments' => $totalInvestments,
-                'pending_investments' => $pendingInvestments,
-                'investments_by_location' => $investmentsByLocation
-            ];
+            $totalInvested = $investments->sum('amount');
+            $totalInvestments = $investments->count();
 
-            Log::info('User investment summary:', $summary);
+            // Get pending investments count
+            $pendingInvestments = $user->investments()
+                ->where('status', 'pending')
+                ->count();
+
+            // Group investments by location
+            $investmentsByLocation = $investments->groupBy('location_id')->map(function ($locationInvestments) {
+                $location = $locationInvestments->first()->location;
+                return [
+                    'location' => [
+                        'id' => $location->id,
+                        'name' => $location->name,
+                        'city' => $location->city,
+                    ],
+                    'total_amount' => (float) $locationInvestments->sum('amount'),
+                    'investment_count' => $locationInvestments->count(),
+                ];
+            })->values();
 
             return response()->json([
                 'success' => true,
-                'data' => $summary
+                'data' => [
+                    'total_invested' => (float) $totalInvested,
+                    'total_investments' => $totalInvestments,
+                    'pending_investments' => $pendingInvestments,
+                    'investments_by_location' => $investmentsByLocation,
+                ],
             ]);
-
         } catch (\Exception $e) {
-            Log::error('Error fetching investment summary: ' . $e->getMessage());
-            
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to fetch investment summary'
+                'message' => 'Failed to fetch user investment summary',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -307,7 +581,7 @@ class InvestmentController extends Controller
             $locationsCount = Location::count();
             $activeLocationsCount = Location::where('status', true)->count();
             $investmentsCount = Investment::count();
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'API is working',
@@ -328,4 +602,3 @@ class InvestmentController extends Controller
         }
     }
 }
-
