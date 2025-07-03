@@ -19,6 +19,11 @@ return new class extends Migration
             $table->text('bio')->nullable();
             $table->date('work_start_date')->nullable();
             $table->boolean('status')->default(true);
+            $table->string('password');
+            $table->timestamp('email_verified_at')->nullable();
+            $table->rememberToken();
+            $table->string('profile_photo_path', 2048)->nullable();
+            $table->timestamp('last_login_at')->nullable();
             $table->timestamps();
         });
         

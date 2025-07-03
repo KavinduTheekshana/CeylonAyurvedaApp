@@ -3,31 +3,59 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Carbon\Carbon;
 
-class Therapist extends Model
+class Therapist extends Authenticatable implements FilamentUser
 {
-    use HasFactory;
+    use HasFactory, Notifiable, HasApiTokens;
 
     protected $fillable = [
         'name',
         'email',
+        'password',
         'phone',
         'image',
         'bio',
         'work_start_date',
         'status',
+        'email_verified_at',
+        'profile_photo_path',
+        'last_login_at',
+    ];
+
+    protected $hidden = [
+        'password',
+        'remember_token',
     ];
 
     protected $casts = [
         'status' => 'boolean',
         'work_start_date' => 'date',
+        'email_verified_at' => 'datetime',
+        'last_login_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'password' => 'hashed',
     ];
+
+    /**
+     * Determine if the user can access the given Filament panel.
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        if ($panel->getId() === 'therapist') {
+            return $this->status === true; // Only active therapists can login
+        }
+
+        return false;
+    }
 
     /**
      * Get the services that this therapist can perform.
@@ -141,10 +169,49 @@ class Therapist extends Model
     }
 
     /**
+     * Get profile photo URL
+     */
+    public function getProfilePhotoUrlAttribute()
+    {
+        if ($this->profile_photo_path) {
+            return asset('storage/' . $this->profile_photo_path);
+        }
+        
+        if ($this->image) {
+            return asset('storage/' . $this->image);
+        }
+        
+        return 'https://ui-avatars.com/api/?name=' . urlencode($this->name) . '&color=7F9CF5&background=EBF4FF';
+    }
+
+    /**
      * Scope for active therapists
      */
     public function scopeActive($query)
     {
         return $query->where('status', true);
+    }
+
+    /**
+     * Get today's bookings
+     */
+    public function todaysBookings()
+    {
+        return $this->bookings()
+            ->whereDate('date', today())
+            ->whereIn('status', ['confirmed', 'pending'])
+            ->orderBy('time');
+    }
+
+    /**
+     * Get upcoming bookings
+     */
+    public function upcomingBookings()
+    {
+        return $this->bookings()
+            ->where('date', '>=', today())
+            ->whereIn('status', ['confirmed', 'pending'])
+            ->orderBy('date')
+            ->orderBy('time');
     }
 }

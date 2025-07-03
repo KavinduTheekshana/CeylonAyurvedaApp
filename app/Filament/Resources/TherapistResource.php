@@ -20,7 +20,8 @@ use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Hash;
+use Filament\Notifications\Notification;
 
 class TherapistResource extends Resource
 {
@@ -32,59 +33,82 @@ class TherapistResource extends Resource
     {
         return $form
             ->schema([
-                TextInput::make('name')
-                    ->required()
-                    ->maxLength(255),
+                Forms\Components\Section::make('Personal Information')
+                    ->schema([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                TextInput::make('name')
+                                    ->required()
+                                    ->maxLength(255),
 
-                TextInput::make('email')
-                    ->email()
-                    ->required()
-                    ->unique(ignoreRecord: true)
-                    ->maxLength(255),
+                                TextInput::make('email')
+                                    ->email()
+                                    ->required()
+                                    ->unique(ignoreRecord: true)
+                                    ->maxLength(255),
+                            ]),
 
-                Select::make('locations')
-                    ->relationship('locations', 'name')
-                    ->multiple()
-                    ->preload()
-                    ->searchable()
-                    ->required()
-                    ->columnSpanFull(),
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                TextInput::make('phone')
+                                    ->required()
+                                    ->tel()
+                                    ->maxLength(255),
 
-                TextInput::make('phone')
-                    ->required()
-                    ->tel()
-                    ->maxLength(255),
+                                TextInput::make('password')
+                                    ->password()
+                                    ->dehydrateStateUsing(fn ($state) => Hash::make($state))
+                                    ->dehydrated(fn ($state) => filled($state))
+                                    ->required(fn (string $context): bool => $context === 'create')
+                                    ->minLength(8)
+                                    ->helperText('Leave blank to keep current password (for edit)'),
+                            ]),
 
-                FileUpload::make('image')
-                    ->directory('therapists')
-                    ->image()
-                    ->imageResizeMode('cover')
-                    ->imageCropAspectRatio('1:1')
-                    ->imageResizeTargetWidth('300')
-                    ->imageResizeTargetHeight('300'),
+                        FileUpload::make('image')
+                            ->directory('therapists')
+                            ->image()
+                            ->imageResizeMode('cover')
+                            ->imageCropAspectRatio('1:1')
+                            ->imageResizeTargetWidth('300')
+                            ->imageResizeTargetHeight('300'),
 
-                Textarea::make('bio')
-                    ->maxLength(500)
-                    ->columnSpanFull(),
+                        Textarea::make('bio')
+                            ->maxLength(500)
+                            ->columnSpanFull(),
 
-                DatePicker::make('work_start_date')
-                    ->label('Job Start Date')
-                    ->native(false)
-                    ->displayFormat('d/m/Y')
-                    ->format('Y-m-d')
-                    ->helperText('Select when the therapist starts/started this job'),
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                DatePicker::make('work_start_date')
+                                    ->label('Job Start Date')
+                                    ->native(false)
+                                    ->displayFormat('d/m/Y')
+                                    ->format('Y-m-d')
+                                    ->helperText('Select when the therapist starts/started this job'),
 
-                Toggle::make('status')
-                    ->label('Active')
-                    ->default(true),
+                                Toggle::make('status')
+                                    ->label('Active')
+                                    ->default(true),
+                            ]),
+                    ]),
 
-                Select::make('services')
-                    ->relationship('services', 'title')
-                    ->multiple()
-                    ->preload()
-                    ->searchable()
-                    ->required()
-                    ->columnSpanFull(),
+                Forms\Components\Section::make('Assignments')
+                    ->schema([
+                        Select::make('locations')
+                            ->relationship('locations', 'name')
+                            ->multiple()
+                            ->preload()
+                            ->searchable()
+                            ->required()
+                            ->columnSpanFull(),
+
+                        Select::make('services')
+                            ->relationship('services', 'title')
+                            ->multiple()
+                            ->preload()
+                            ->searchable()
+                            ->required()
+                            ->columnSpanFull(),
+                    ]),
             ]);
     }
 
@@ -102,7 +126,8 @@ class TherapistResource extends Resource
 
                 TextColumn::make('email')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->copyable(),
 
                 TextColumn::make('phone')
                     ->searchable(),
@@ -141,14 +166,14 @@ class TherapistResource extends Resource
                         $startDate = \Carbon\Carbon::parse($record->work_start_date);
 
                         if ($startDate->isFuture()) {
-                            return 'warning'; // Future start date
+                            return 'warning';
                         }
 
                         if ($startDate->isToday()) {
-                            return 'info'; // Starting today
+                            return 'info';
                         }
 
-                        return 'success'; // Currently active
+                        return 'success';
                     })
                     ->sortable(false)
                     ->toggleable(),
@@ -166,20 +191,17 @@ class TherapistResource extends Resource
                     ->badge()
                     ->color('success'),
 
-                TextColumn::make('available_days')
-                    ->label('Available Days')
-                    ->state(function (Therapist $record): string {
-                        $days = $record->availabilities()
-                            ->where('is_active', true)
-                            ->distinct('day_of_week')
-                            ->pluck('day_of_week')
-                            ->map(fn($day) => substr(ucfirst($day), 0, 3))
-                            ->toArray();
+                TextColumn::make('email_verified_at')
+                    ->label('Email Verified')
+                    ->dateTime('M d, Y')
+                    ->placeholder('Not verified')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
-                        return implode(', ', $days);
-                    })
-                    ->badge()
-                    ->color('info'),
+                TextColumn::make('last_login_at')
+                    ->label('Last Login')
+                    ->dateTime('M d, Y H:i')
+                    ->placeholder('Never')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 BooleanColumn::make('status')
                     ->label('Active'),
@@ -215,38 +237,95 @@ class TherapistResource extends Resource
                             );
                     }),
 
-                Tables\Filters\SelectFilter::make('work_status')
-                    ->label('Work Status')
-                    ->options([
-                        'future' => 'Future Start Date',
-                        'today' => 'Starting Today',
-                        'active' => 'Currently Active',
-                        'no_date' => 'No Start Date',
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        if (!$data['value']) {
-                            return $query;
-                        }
-
-                        $status = $data['value'];
-                        $now = now();
-
-                        return match ($status) {
-                            'future' => $query->where('work_start_date', '>', $now),
-                            'today' => $query->whereDate('work_start_date', $now->toDateString()),
-                            'active' => $query->where('work_start_date', '<=', $now)->whereNotNull('work_start_date'),
-                            'no_date' => $query->whereNull('work_start_date'),
-                            default => $query,
-                        };
-                    }),
+                Tables\Filters\TernaryFilter::make('email_verified')
+                    ->label('Email Verified')
+                    ->trueLabel('Verified')
+                    ->falseLabel('Not Verified')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereNotNull('email_verified_at'),
+                        false: fn (Builder $query) => $query->whereNull('email_verified_at'),
+                    ),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
+                
+                Tables\Actions\Action::make('reset_password')
+                    ->label('Reset Password')
+                    ->icon('heroicon-o-key')
+                    ->color('warning')
+                    ->form([
+                        TextInput::make('new_password')
+                            ->label('New Password')
+                            ->password()
+                            ->required()
+                            ->minLength(8)
+                            ->default('password123'),
+                    ])
+                    ->action(function (Therapist $record, array $data) {
+                        $record->update([
+                            'password' => Hash::make($data['new_password']),
+                            'email_verified_at' => now(),
+                        ]);
+
+                        Notification::make()
+                            ->title('Password Reset')
+                            ->body("Password has been reset for {$record->name}")
+                            ->success()
+                            ->send();
+                    })
+                    ->requiresConfirmation()
+                    ->modalHeading('Reset Therapist Password')
+                    ->modalDescription('This will reset the therapist\'s password and mark their email as verified.'),
+
+                Tables\Actions\Action::make('login_as')
+                    ->label('Login URL')
+                    ->icon('heroicon-o-link')
+                    ->color('info')
+                    ->action(function (Therapist $record) {
+                        $url = url('/therapist/login');
+                        
+                        Notification::make()
+                            ->title('Login Information')
+                            ->body("Email: {$record->email}\nLogin URL: {$url}")
+                            ->info()
+                            ->persistent()
+                            ->send();
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
+                    
+                    Tables\Actions\BulkAction::make('reset_passwords')
+                        ->label('Reset Passwords')
+                        ->icon('heroicon-o-key')
+                        ->color('warning')
+                        ->form([
+                            TextInput::make('new_password')
+                                ->label('New Password')
+                                ->password()
+                                ->required()
+                                ->minLength(8)
+                                ->default('password123'),
+                        ])
+                        ->action(function ($records, array $data) {
+                            $count = 0;
+                            foreach ($records as $record) {
+                                $record->update([
+                                    'password' => Hash::make($data['new_password']),
+                                    'email_verified_at' => now(),
+                                ]);
+                                $count++;
+                            }
+
+                            Notification::make()
+                                ->title('Passwords Reset')
+                                ->body("Passwords have been reset for {$count} therapists")
+                                ->success()
+                                ->send();
+                        })
+                        ->requiresConfirmation(),
                 ]),
             ]);
     }
