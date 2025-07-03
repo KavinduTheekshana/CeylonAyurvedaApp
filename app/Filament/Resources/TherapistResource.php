@@ -57,9 +57,9 @@ class TherapistResource extends Resource
 
                                 TextInput::make('password')
                                     ->password()
-                                    ->dehydrateStateUsing(fn ($state) => Hash::make($state))
-                                    ->dehydrated(fn ($state) => filled($state))
-                                    ->required(fn (string $context): bool => $context === 'create')
+                                    ->dehydrateStateUsing(fn($state) => Hash::make($state))
+                                    ->dehydrated(fn($state) => filled($state))
+                                    ->required(fn(string $context): bool => $context === 'create')
                                     ->minLength(8)
                                     ->helperText('Leave blank to keep current password (for edit)'),
                             ]),
@@ -183,7 +183,7 @@ class TherapistResource extends Resource
                     ->color('primary')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('availabilities_count')
                     ->label('Availability Slots')
@@ -242,14 +242,14 @@ class TherapistResource extends Resource
                     ->trueLabel('Verified')
                     ->falseLabel('Not Verified')
                     ->queries(
-                        true: fn (Builder $query) => $query->whereNotNull('email_verified_at'),
-                        false: fn (Builder $query) => $query->whereNull('email_verified_at'),
+                        true: fn(Builder $query) => $query->whereNotNull('email_verified_at'),
+                        false: fn(Builder $query) => $query->whereNull('email_verified_at'),
                     ),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
-                
+
                 Tables\Actions\Action::make('reset_password')
                     ->label('Reset Password')
                     ->icon('heroicon-o-key')
@@ -284,7 +284,7 @@ class TherapistResource extends Resource
                     ->color('info')
                     ->action(function (Therapist $record) {
                         $url = url('/therapist/login');
-                        
+
                         Notification::make()
                             ->title('Login Information')
                             ->body("Email: {$record->email}\nLogin URL: {$url}")
@@ -296,7 +296,7 @@ class TherapistResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
-                    
+
                     Tables\Actions\BulkAction::make('reset_passwords')
                         ->label('Reset Passwords')
                         ->icon('heroicon-o-key')
