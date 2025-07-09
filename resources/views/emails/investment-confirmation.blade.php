@@ -234,7 +234,7 @@
         }
         
         .footer-contact {
-            display: flex;
+            /* display: flex; */
             justify-content: center;
             gap: 10px 50px;
             margin-top: 20px;
