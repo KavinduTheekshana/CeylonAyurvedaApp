@@ -175,7 +175,7 @@ class BookingController extends Controller
         $booking->postcode = $postcode;
         $booking->notes = $request->notes;
         $booking->status = 'confirmed'; // Default status based on your schema
-        $booking->price = $service->price;
+        $booking->price = $service->discount_price ?? $service->price;
         $booking->reference = $reference;
         $booking->save();
         

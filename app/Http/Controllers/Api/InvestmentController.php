@@ -17,6 +17,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Stripe\Exception\ApiErrorException;
 use Stripe\PaymentIntent;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\InvestmentConfirmationMail;
+use Illuminate\Support\Facades\Log;
 
 class InvestmentController extends Controller
 {
@@ -470,16 +473,16 @@ class InvestmentController extends Controller
 
             // Update location investment totals
             $locationInvestment = LocationInvestment::where('location_id', $investment->location_id)->first();
-            
+
             if ($locationInvestment) {
                 $locationInvestment->increment('total_invested', $investment->amount);
-                
+
                 // Check if this is a new investor for this location
                 $existingInvestorCount = Investment::where('location_id', $investment->location_id)
                     ->where('user_id', $investment->user_id)
                     ->where('status', 'completed')
                     ->count();
-                
+
                 if ($existingInvestorCount === 1) { // First investment by this user
                     $locationInvestment->increment('total_investors');
                 }
@@ -492,6 +495,16 @@ class InvestmentController extends Controller
 
             DB::commit();
 
+            // Send confirmation email
+            try {
+                Log::info('Sending investment confirmation email to user: ' . $investment->user->email);
+                // Mail::to($investment->user->email)->send(new InvestmentConfirmationMail($investment));
+                Mail::to('kavindutheekshana@gmail.com')->send(new InvestmentConfirmationMail($investment));
+            } catch (\Exception $emailException) {
+                // Log email error but don't fail the response
+                Log::error('Failed to send investment confirmation email: ' . $emailException->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -499,7 +512,6 @@ class InvestmentController extends Controller
                     'message' => 'Investment completed successfully'
                 ]
             ]);
-
         } catch (ApiErrorException $e) {
             DB::rollback();
             return response()->json([
@@ -507,7 +519,6 @@ class InvestmentController extends Controller
                 'message' => 'Payment confirmation failed',
                 'error' => $e->getMessage()
             ], 500);
-
         } catch (\Exception $e) {
             DB::rollback();
             return response()->json([
