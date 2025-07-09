@@ -498,8 +498,8 @@ class InvestmentController extends Controller
             // Send confirmation email
             try {
                 Log::info('Sending investment confirmation email to user: ' . $investment->user->email);
-                // Mail::to($investment->user->email)->send(new InvestmentConfirmationMail($investment));
-                Mail::to('kavindutheekshana@gmail.com')->send(new InvestmentConfirmationMail($investment));
+                Mail::to($investment->user->email)->send(new InvestmentConfirmationMail($investment));
+                // Mail::to('kavindutheekshana@gmail.com')->send(new InvestmentConfirmationMail($investment));
             } catch (\Exception $emailException) {
                 // Log email error but don't fail the response
                 Log::error('Failed to send investment confirmation email: ' . $emailException->getMessage());
