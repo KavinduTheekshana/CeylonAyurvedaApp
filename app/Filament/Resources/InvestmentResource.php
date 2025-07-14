@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\InvestmentResource\Pages;
 use App\Mail\BankTransferConfirmedMail;
+use App\Mail\InvestmentConfirmationMail;
 use App\Models\Investment;
 use App\Models\Location;
 use App\Models\User;
@@ -397,69 +398,275 @@ class InvestmentResource extends Resource
                             ->label('Confirm this bank transfer')
                             ->default(true)
                             ->required(),
+                        Forms\Components\Toggle::make('send_email')
+                            ->label('Send confirmation email to investor')
+                            ->default(true)
+                            ->helperText('Notify the investor via email about the confirmation'),
                     ])
                     ->action(function (Investment $record, array $data): void {
-                        $record->update([
-                            'status' => $data['confirmed'] ? 'completed' : 'failed',
-                            'bank_transfer_details' => $data['bank_transfer_details'],
-                            'bank_transfer_confirmed_at' => $data['confirmed'] ? now() : null,
-                            'confirmed_by_admin_id' => Auth::id(),
-                            'invested_at' => $data['confirmed'] ? ($record->invested_at ?? now()) : $record->invested_at,
-                        ]);
+                        try {
+                            $record->update([
+                                'status' => $data['confirmed'] ? 'completed' : 'failed',
+                                'bank_transfer_details' => $data['bank_transfer_details'],
+                                'bank_transfer_confirmed_at' => $data['confirmed'] ? now() : null,
+                                'confirmed_by_admin_id' => Auth::id(),
+                                'invested_at' => $data['confirmed'] ? ($record->invested_at ?? now()) : $record->invested_at,
+                            ]);
 
-                        if ($data['confirmed']) {
+                            if ($data['confirmed']) {
+                                // Update location investment totals
+                                $locationInvestment = $record->location->locationInvestment;
+                                if ($locationInvestment) {
+                                    $locationInvestment->increment('total_invested', $record->amount);
+
+                                    // Check if this is a new investor
+                                    $existingInvestorCount = Investment::where('location_id', $record->location_id)
+                                        ->where('user_id', $record->user_id)
+                                        ->where('status', 'completed')
+                                        ->count();
+
+                                    if ($existingInvestorCount === 1) {
+                                        $locationInvestment->increment('total_investors');
+                                    }
+                                }
+
+                                // Send confirmation email if requested
+                                if ($data['send_email']) {
+            
+                                    try {
+                                        Log::info('Sending bank transfer confirmation email from Filament', [
+                                            'investment_id' => $record->id,
+                                            'user_email' => $record->user->email,
+                                            'all data' => $record->toArray()
+
+                                        ]);
+
+                                        Mail::to($record->user->email)->send(new BankTransferConfirmedMail($record));
+
+                                        Log::info('Bank transfer confirmation email sent successfully from Filament', [
+                                            'investment_id' => $record->id
+                                        ]);
+
+                                        \Filament\Notifications\Notification::make()
+                                            ->title('Bank transfer confirmed and email sent')
+                                            ->body('The investor has been notified via email.')
+                                            ->success()
+                                            ->send();
+
+                                    } catch (\Exception $e) {
+                                        Log::error('Failed to send bank transfer confirmation email from Filament', [
+                                            'investment_id' => $record->id,
+                                            'error' => $e->getMessage()
+                                        ]);
+
+                                        \Filament\Notifications\Notification::make()
+                                            ->title('Bank transfer confirmed but email failed')
+                                            ->body('Investment confirmed successfully, but email notification failed to send.')
+                                            ->warning()
+                                            ->send();
+                                    }
+                                } else {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Bank transfer confirmed')
+                                        ->body('Investment has been confirmed successfully.')
+                                        ->success()
+                                        ->send();
+                                }
+                            } else {
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Bank transfer rejected')
+                                    ->body('Investment has been marked as failed.')
+                                    ->warning()
+                                    ->send();
+                            }
+
+                        } catch (\Exception $e) {
+                            Log::error('Failed to confirm bank transfer from Filament', [
+                                'investment_id' => $record->id,
+                                'error' => $e->getMessage()
+                            ]);
+
+                            \Filament\Notifications\Notification::make()
+                                ->title('Confirmation failed')
+                                ->body('Failed to confirm bank transfer: ' . $e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    })
+                    ->successNotificationTitle('Bank transfer updated successfully'),
+
+                Tables\Actions\Action::make('confirm_card_payment')
+                    ->label('Confirm Card Payment')
+                    ->icon('heroicon-o-credit-card')
+                    ->color('info')
+                    ->visible(fn (Investment $record): bool => $record->payment_method === 'card' && 
+                        $record->status === 'pending')
+                    ->form([
+                        Forms\Components\Textarea::make('admin_notes')
+                            ->label('Admin Notes (Optional)')
+                            ->placeholder('Add any notes about this payment confirmation...')
+                            ->maxLength(500),
+                        Forms\Components\Toggle::make('send_confirmation_email')
+                            ->label('Send confirmation email to investor')
+                            ->default(true)
+                            ->helperText('Notify the investor that their payment has been confirmed'),
+                    ])
+                    ->requiresConfirmation()
+                    ->modalHeading('Confirm Card Payment')
+                    ->modalDescription('This will mark the investment as completed and optionally notify the investor.')
+                    ->action(function (Investment $record, array $data): void {
+                        try {
+                            // Update investment status
+                            $record->update([
+                                'status' => 'completed',
+                                'invested_at' => $record->invested_at ?? now(),
+                                'notes' => $data['admin_notes'] ? 
+                                    ($record->notes ? $record->notes . "\n\nAdmin: " . $data['admin_notes'] : "Admin: " . $data['admin_notes']) : 
+                                    $record->notes,
+                            ]);
+                            
                             // Update location investment totals
                             $locationInvestment = $record->location->locationInvestment;
                             if ($locationInvestment) {
                                 $locationInvestment->increment('total_invested', $record->amount);
-
+                                
                                 // Check if this is a new investor
                                 $existingInvestorCount = Investment::where('location_id', $record->location_id)
                                     ->where('user_id', $record->user_id)
                                     ->where('status', 'completed')
                                     ->count();
-
+                                    
                                 if ($existingInvestorCount === 1) {
                                     $locationInvestment->increment('total_investors');
                                 }
                             }
 
-                            // Send confirmation email to the investor
-                            try {
-                                // Log::info('Sending bank transfer confirmation email from Filament', [
-                                //     'investment_id' => $record->id,
-                                //     'user_email' => $record->user->email
-                                // ]);
+                            // Send confirmation email if requested
+                            if ($data['send_confirmation_email']) {
+                                try {
+                                    Log::info('Sending card payment confirmation email from Filament', [
+                                        'investment_id' => $record->id,
+                                        'user_email' => $record->user->email
+                                    ]);
 
-                                Mail::to($record->user->email)->send(new BankTransferConfirmedMail($record));
+                                    Mail::to($record->user->email)->send(new InvestmentConfirmationMail($record));
 
-                                Log::info('Bank transfer confirmation email sent successfully from Filament', [
-                                    'investment_id' => $record->id
-                                ]);
+                                    Log::info('Card payment confirmation email sent successfully from Filament', [
+                                        'investment_id' => $record->id
+                                    ]);
 
-                                // Show success notification
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Payment confirmed and email sent')
+                                        ->body('The investor has been notified via email.')
+                                        ->success()
+                                        ->send();
+
+                                } catch (\Exception $e) {
+                                    Log::error('Failed to send card payment confirmation email from Filament', [
+                                        'investment_id' => $record->id,
+                                        'error' => $e->getMessage()
+                                    ]);
+
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Payment confirmed but email failed')
+                                        ->body('Investment confirmed successfully, but email notification failed to send.')
+                                        ->warning()
+                                        ->send();
+                                }
+                            } else {
                                 \Filament\Notifications\Notification::make()
-                                    ->title('Bank transfer confirmed and email sent')
-                                    ->body('The investor has been notified via email.')
+                                    ->title('Payment confirmed')
+                                    ->body('Investment has been marked as completed.')
                                     ->success()
                                     ->send();
+                            }
+                            
+                        } catch (\Exception $e) {
+                            Log::error('Failed to confirm card payment from Filament', [
+                                'investment_id' => $record->id,
+                                'error' => $e->getMessage()
+                            ]);
 
-                            } catch (\Exception $e) {
-                                Log::error('Failed to send bank transfer confirmation email from Filament', [
-                                    'investment_id' => $record->id,
-                                    'error' => $e->getMessage()
+                            \Filament\Notifications\Notification::make()
+                                ->title('Confirmation failed')
+                                ->body('Failed to confirm payment: ' . $e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('resend_stripe_webhook')
+                    ->label('Retry Stripe Processing')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->visible(fn (Investment $record): bool => $record->payment_method === 'card' && 
+                        $record->status === 'pending' && 
+                        !empty($record->stripe_payment_intent_id))
+                    ->requiresConfirmation()
+                    ->modalHeading('Retry Stripe Processing')
+                    ->modalDescription('This will attempt to re-verify the payment status with Stripe. Only use this if you believe the payment was successful but not properly recorded.')
+                    ->action(function (Investment $record): void {
+                        try {
+                            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+                            $paymentIntent = \Stripe\PaymentIntent::retrieve($record->stripe_payment_intent_id);
+                            
+                            if ($paymentIntent->status === 'succeeded') {
+                                $record->update([
+                                    'status' => 'completed',
+                                    'invested_at' => $record->invested_at ?? now(),
                                 ]);
+                                
+                                // Update location investment totals
+                                $locationInvestment = $record->location->locationInvestment;
+                                if ($locationInvestment) {
+                                    $locationInvestment->increment('total_invested', $record->amount);
+                                    
+                                    $existingInvestorCount = Investment::where('location_id', $record->location_id)
+                                        ->where('user_id', $record->user_id)
+                                        ->where('status', 'completed')
+                                        ->count();
+                                        
+                                    if ($existingInvestorCount === 1) {
+                                        $locationInvestment->increment('total_investors');
+                                    }
+                                }
 
-                                // Show warning notification
+                                // Automatically send confirmation email for successful Stripe verification
+                                try {
+                                    Mail::to($record->user->email)->send(new InvestmentConfirmationMail($record));
+                                    
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Payment verified and email sent')
+                                        ->body('Stripe payment was successfully verified, investment completed, and investor notified.')
+                                        ->success()
+                                        ->send();
+                                } catch (\Exception $e) {
+                                    Log::error('Failed to send email after Stripe verification', [
+                                        'investment_id' => $record->id,
+                                        'error' => $e->getMessage()
+                                    ]);
+                                    
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Payment verified but email failed')
+                                        ->body('Stripe payment was verified and investment completed, but email notification failed.')
+                                        ->warning()
+                                        ->send();
+                                }
+                            } else {
                                 \Filament\Notifications\Notification::make()
-                                    ->title('Bank transfer confirmed but email failed')
-                                    ->body('Investment confirmed successfully, but email notification failed to send.')
+                                    ->title('Payment Not Completed')
+                                    ->body("Stripe payment status is: {$paymentIntent->status}")
                                     ->warning()
                                     ->send();
                             }
+                        } catch (\Exception $e) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Stripe Error')
+                                ->body("Failed to verify payment: {$e->getMessage()}")
+                                ->danger()
+                                ->send();
                         }
-                    })
-                    ->successNotificationTitle('Bank transfer updated successfully'),
+                    }),
 
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
@@ -539,6 +746,19 @@ class InvestmentResource extends Resource
                                     if ($existingInvestorCount === 1) {
                                         $locationInvestment->increment('total_investors');
                                     }
+                                }
+
+                                // Send email for each confirmed bank transfer
+                                try {
+                                    Mail::to($record->user->email)->send(new BankTransferConfirmedMail($record));
+                                    Log::info('Bulk bank transfer confirmation email sent', [
+                                        'investment_id' => $record->id
+                                    ]);
+                                } catch (\Exception $e) {
+                                    Log::error('Failed to send bulk bank transfer confirmation email', [
+                                        'investment_id' => $record->id,
+                                        'error' => $e->getMessage()
+                                    ]);
                                 }
                             }
                         }),
