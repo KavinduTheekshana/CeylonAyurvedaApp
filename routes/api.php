@@ -143,6 +143,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
    
      // Investment CRUD
      Route::post('/investments', [InvestmentController::class, 'createInvestment']);
+     Route::post('/investments/create', [InvestmentController::class, 'createInvestment']);
      Route::get('/investments', [InvestmentController::class, 'getUserInvestments']);
      Route::get('/investments/{investmentId}', [InvestmentController::class, 'getInvestmentDetails']);
 

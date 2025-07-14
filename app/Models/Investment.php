@@ -21,6 +21,7 @@ class Investment extends Model
         'stripe_payment_intent_id',
         'stripe_payment_method_id',
         'reference',
+        'payment_method',
         'notes',
         'invested_at',
         'stripe_metadata',
@@ -76,6 +77,11 @@ class Investment extends Model
             'status' => 'completed',
             'invested_at' => now(),
         ]);
+    }
+
+    public function confirmedByAdmin()
+    {
+        return $this->belongsTo(User::class, 'confirmed_by_admin_id');
     }
     
 }

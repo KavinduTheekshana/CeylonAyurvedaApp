@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\InvestmentResource\Pages;
+use App\Mail\BankTransferConfirmedMail;
 use App\Models\Investment;
 use App\Models\Location;
 use App\Models\User;
@@ -13,17 +14,21 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
+use Filament\Support\Enums\FontWeight;
+use Filament\Forms\Get;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class InvestmentResource extends Resource
 {
     protected static ?string $model = Investment::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
-    
+
     protected static ?string $navigationGroup = 'Investment Management';
-    
+
     protected static ?string $navigationLabel = 'Investments';
-    
+
     protected static ?int $navigationSort = 1;
 
     public static function form(Form $form): Form
@@ -63,7 +68,6 @@ class InvestmentResource extends Resource
                                     ->required()
                                     ->live()
                                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                                        // You could add logic here to show location investment limits
                                         if ($state) {
                                             $location = Location::find($state);
                                             if ($location && $location->locationInvestment) {
@@ -74,7 +78,7 @@ class InvestmentResource extends Resource
                                     }),
                             ]),
 
-                        Forms\Components\Grid::make(2)
+                        Forms\Components\Grid::make(3)
                             ->schema([
                                 Forms\Components\TextInput::make('amount')
                                     ->label('Investment Amount (£)')
@@ -100,6 +104,26 @@ class InvestmentResource extends Resource
                                     ])
                                     ->default('GBP')
                                     ->required(),
+
+                                Forms\Components\Select::make('payment_method')
+                                    ->label('Payment Method')
+                                    ->options([
+                                        'card' => 'Card Payment',
+                                        'bank_transfer' => 'Bank Transfer',
+                                    ])
+                                    ->default('card')
+                                    ->required()
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, callable $set) {
+                                        // Reset payment-specific fields when changing method
+                                        if ($state === 'bank_transfer') {
+                                            $set('stripe_payment_intent_id', null);
+                                            $set('stripe_payment_method_id', null);
+                                        } else {
+                                            $set('bank_transfer_details', null);
+                                            $set('bank_transfer_confirmed_at', null);
+                                        }
+                                    }),
                             ]),
 
                         Forms\Components\Grid::make(2)
@@ -119,7 +143,7 @@ class InvestmentResource extends Resource
                                 Forms\Components\TextInput::make('reference')
                                     ->label('Reference Number')
                                     ->unique(ignoreRecord: true)
-                                    ->default(fn () => Investment::generateReference())
+                                    ->default(fn() => Investment::generateReference())
                                     ->required()
                                     ->maxLength(255),
                             ]),
@@ -139,25 +163,60 @@ class InvestmentResource extends Resource
 
                 Forms\Components\Section::make('Payment Information')
                     ->schema([
-                        Forms\Components\Grid::make(2)
+                        // Card Payment Fields
+                        Forms\Components\Group::make()
                             ->schema([
-                                Forms\Components\TextInput::make('stripe_payment_intent_id')
-                                    ->label('Stripe Payment Intent ID')
-                                    ->placeholder('pi_1234567890...')
-                                    ->maxLength(255),
+                                Forms\Components\Grid::make(2)
+                                    ->schema([
+                                        Forms\Components\TextInput::make('stripe_payment_intent_id')
+                                            ->label('Stripe Payment Intent ID')
+                                            ->placeholder('pi_1234567890...')
+                                            ->maxLength(255),
 
-                                Forms\Components\TextInput::make('stripe_payment_method_id')
-                                    ->label('Stripe Payment Method ID')
-                                    ->placeholder('pm_1234567890...')
-                                    ->maxLength(255),
-                            ]),
+                                        Forms\Components\TextInput::make('stripe_payment_method_id')
+                                            ->label('Stripe Payment Method ID')
+                                            ->placeholder('pm_1234567890...')
+                                            ->maxLength(255),
+                                    ]),
+                            ])
+                            ->visible(fn(Get $get): bool => $get('payment_method') === 'card'),
 
-                        Forms\Components\KeyValue::make('stripe_metadata')
-                            ->label('Additional Metadata')
-                            ->keyLabel('Field')
-                            ->valueLabel('Value')
-                            ->addActionLabel('Add metadata'),
+                        // Bank Transfer Fields
+                        Forms\Components\Group::make()
+                            ->schema([
+                                Forms\Components\Grid::make(2)
+                                    ->schema([
+                                        Forms\Components\Select::make('confirmed_by_admin_id')
+                                            ->label('Confirmed by Admin')
+                                            ->relationship('confirmedByAdmin', 'name')
+                                            ->searchable()
+                                            ->preload()
+                                            ->placeholder('Select admin who confirmed'),
+
+                                        Forms\Components\DateTimePicker::make('bank_transfer_confirmed_at')
+                                            ->label('Bank Transfer Confirmed At')
+                                            ->native(false),
+                                    ]),
+
+                                Forms\Components\Textarea::make('bank_transfer_details')
+                                    ->label('Bank Transfer Details')
+                                    ->placeholder('Admin notes about the bank transfer confirmation...')
+                                    ->maxLength(1000)
+                                    ->columnSpanFull(),
+                            ])
+                            ->visible(fn(Get $get): bool => $get('payment_method') === 'bank_transfer'),
                     ])
+                    ->collapsible()
+                    ->collapsed(),
+
+                Forms\Components\Section::make('Admin Actions')
+                    ->schema([
+                        Forms\Components\Placeholder::make('admin_actions_info')
+                            ->label('')
+                            ->content('Use the actions below to manage bank transfer confirmations and investment status updates.')
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn($record) => $record && $record->payment_method === 'bank_transfer' && $record->status === 'pending')
                     ->collapsible()
                     ->collapsed(),
             ]);
@@ -173,26 +232,39 @@ class InvestmentResource extends Resource
                     ->sortable()
                     ->copyable()
                     ->copyMessage('Reference copied!')
-                    ->weight('bold'),
+                    ->weight(FontWeight::Bold),
 
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Investor')
                     ->searchable()
                     ->sortable()
-                    ->description(fn (Investment $record): string => $record->user->email),
+                    ->description(fn(Investment $record): string => $record->user->email),
 
                 Tables\Columns\TextColumn::make('location.name')
                     ->label('Location')
                     ->searchable()
                     ->sortable()
-                    ->description(fn (Investment $record): string => $record->location->city),
+                    ->description(fn(Investment $record): string => $record->location->city),
 
                 Tables\Columns\TextColumn::make('amount')
                     ->label('Amount')
                     ->money('GBP')
                     ->sortable()
                     ->alignEnd()
-                    ->weight('bold'),
+                    ->weight(FontWeight::Bold),
+
+                Tables\Columns\BadgeColumn::make('payment_method')
+                    ->label('Payment')
+                    ->colors([
+                        'primary' => 'card',
+                        'info' => 'bank_transfer',
+                    ])
+                    ->formatStateUsing(fn(string $state): string => match ($state) {
+                        'card' => 'Card',
+                        'bank_transfer' => 'Bank Transfer',
+                        default => $state,
+                    })
+                    ->sortable(),
 
                 Tables\Columns\BadgeColumn::make('status')
                     ->colors([
@@ -208,13 +280,25 @@ class InvestmentResource extends Resource
                     ->label('Investment Date')
                     ->dateTime('M j, Y g:i A')
                     ->sortable()
-                    ->description(fn (Investment $record): string => $record->invested_at?->diffForHumans() ?? ''),
+                    ->description(fn(Investment $record): string => $record->invested_at?->diffForHumans() ?? 'Not completed'),
+
+                Tables\Columns\TextColumn::make('bank_transfer_confirmed_at')
+                    ->label('Bank Transfer Confirmed')
+                    ->dateTime('M j, Y g:i A')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->placeholder('Not confirmed'),
+
+                Tables\Columns\TextColumn::make('confirmedByAdmin.name')
+                    ->label('Confirmed By')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->placeholder('Not confirmed'),
 
                 Tables\Columns\TextColumn::make('stripe_payment_intent_id')
                     ->label('Stripe ID')
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->copyable()
-                    ->placeholder('Manual entry'),
+                    ->placeholder('Manual/Bank transfer'),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Created')
@@ -230,6 +314,14 @@ class InvestmentResource extends Resource
                         'completed' => 'Completed',
                         'failed' => 'Failed',
                         'refunded' => 'Refunded',
+                    ])
+                    ->multiple(),
+
+                Tables\Filters\SelectFilter::make('payment_method')
+                    ->label('Payment Method')
+                    ->options([
+                        'card' => 'Card Payment',
+                        'bank_transfer' => 'Bank Transfer',
                     ])
                     ->multiple(),
 
@@ -257,13 +349,18 @@ class InvestmentResource extends Resource
                         return $query
                             ->when(
                                 $data['amount_from'],
-                                fn (Builder $query, $amount): Builder => $query->where('amount', '>=', $amount),
+                                fn(Builder $query, $amount): Builder => $query->where('amount', '>=', $amount),
                             )
                             ->when(
                                 $data['amount_to'],
-                                fn (Builder $query, $amount): Builder => $query->where('amount', '<=', $amount),
+                                fn(Builder $query, $amount): Builder => $query->where('amount', '<=', $amount),
                             );
                     }),
+
+                Tables\Filters\Filter::make('pending_bank_transfers')
+                    ->label('Pending Bank Transfers')
+                    ->query(fn(Builder $query): Builder => $query->where('payment_method', 'bank_transfer')->where('status', 'pending'))
+                    ->toggle(),
 
                 Tables\Filters\Filter::make('invested_date')
                     ->form([
@@ -276,15 +373,94 @@ class InvestmentResource extends Resource
                         return $query
                             ->when(
                                 $data['invested_from'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('invested_at', '>=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('invested_at', '>=', $date),
                             )
                             ->when(
                                 $data['invested_until'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('invested_at', '<=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('invested_at', '<=', $date),
                             );
                     }),
             ])
             ->actions([
+                Tables\Actions\Action::make('confirm_bank_transfer')
+                    ->label('Confirm Bank Transfer')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->visible(fn(Investment $record): bool => $record->payment_method === 'bank_transfer' && $record->status === 'pending')
+                    ->form([
+                        Forms\Components\Textarea::make('bank_transfer_details')
+                            ->label('Bank Transfer Details')
+                            ->placeholder('Enter details about the bank transfer confirmation...')
+                            ->required()
+                            ->maxLength(1000),
+                        Forms\Components\Toggle::make('confirmed')
+                            ->label('Confirm this bank transfer')
+                            ->default(true)
+                            ->required(),
+                    ])
+                    ->action(function (Investment $record, array $data): void {
+                        $record->update([
+                            'status' => $data['confirmed'] ? 'completed' : 'failed',
+                            'bank_transfer_details' => $data['bank_transfer_details'],
+                            'bank_transfer_confirmed_at' => $data['confirmed'] ? now() : null,
+                            'confirmed_by_admin_id' => Auth::id(),
+                            'invested_at' => $data['confirmed'] ? ($record->invested_at ?? now()) : $record->invested_at,
+                        ]);
+
+                        if ($data['confirmed']) {
+                            // Update location investment totals
+                            $locationInvestment = $record->location->locationInvestment;
+                            if ($locationInvestment) {
+                                $locationInvestment->increment('total_invested', $record->amount);
+
+                                // Check if this is a new investor
+                                $existingInvestorCount = Investment::where('location_id', $record->location_id)
+                                    ->where('user_id', $record->user_id)
+                                    ->where('status', 'completed')
+                                    ->count();
+
+                                if ($existingInvestorCount === 1) {
+                                    $locationInvestment->increment('total_investors');
+                                }
+                            }
+
+                            // Send confirmation email to the investor
+                            try {
+                                // Log::info('Sending bank transfer confirmation email from Filament', [
+                                //     'investment_id' => $record->id,
+                                //     'user_email' => $record->user->email
+                                // ]);
+
+                                Mail::to($record->user->email)->send(new BankTransferConfirmedMail($record));
+
+                                Log::info('Bank transfer confirmation email sent successfully from Filament', [
+                                    'investment_id' => $record->id
+                                ]);
+
+                                // Show success notification
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Bank transfer confirmed and email sent')
+                                    ->body('The investor has been notified via email.')
+                                    ->success()
+                                    ->send();
+
+                            } catch (\Exception $e) {
+                                Log::error('Failed to send bank transfer confirmation email from Filament', [
+                                    'investment_id' => $record->id,
+                                    'error' => $e->getMessage()
+                                ]);
+
+                                // Show warning notification
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Bank transfer confirmed but email failed')
+                                    ->body('Investment confirmed successfully, but email notification failed to send.')
+                                    ->warning()
+                                    ->send();
+                            }
+                        }
+                    })
+                    ->successNotificationTitle('Bank transfer updated successfully'),
+
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
@@ -297,29 +473,83 @@ class InvestmentResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
                         ->requiresConfirmation(),
-                    
+
                     Tables\Actions\BulkAction::make('mark_completed')
                         ->label('Mark as Completed')
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->requiresConfirmation()
                         ->action(function ($records) {
-                            $records->each(function ($record) {
+                            foreach ($records as $record) {
                                 $record->update([
                                     'status' => 'completed',
                                     'invested_at' => $record->invested_at ?? now(),
                                 ]);
+
+                                // Update location totals for newly completed investments
+                                if ($record->wasChanged('status') && $record->status === 'completed') {
+                                    $locationInvestment = $record->location->locationInvestment;
+                                    if ($locationInvestment) {
+                                        $locationInvestment->increment('total_invested', $record->amount);
+
+                                        $existingInvestorCount = Investment::where('location_id', $record->location_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->where('status', 'completed')
+                                            ->count();
+
+                                        if ($existingInvestorCount === 1) {
+                                            $locationInvestment->increment('total_investors');
+                                        }
+                                    }
+                                }
+                            }
+                        }),
+
+                    Tables\Actions\BulkAction::make('confirm_bank_transfers')
+                        ->label('Confirm Bank Transfers')
+                        ->icon('heroicon-o-banknotes')
+                        ->color('info')
+                        ->requiresConfirmation()
+                        ->modalHeading('Confirm Multiple Bank Transfers')
+                        ->modalDescription('This will mark all selected bank transfer investments as completed.')
+                        ->action(function ($records) {
+                            $bankTransferRecords = $records->filter(function ($record) {
+                                return $record->payment_method === 'bank_transfer' && $record->status === 'pending';
                             });
+
+                            foreach ($bankTransferRecords as $record) {
+                                $record->update([
+                                    'status' => 'completed',
+                                    'bank_transfer_confirmed_at' => now(),
+                                    'confirmed_by_admin_id' => Auth::id(),
+                                    'invested_at' => $record->invested_at ?? now(),
+                                    'bank_transfer_details' => 'Bulk confirmed by admin',
+                                ]);
+
+                                // Update location totals
+                                $locationInvestment = $record->location->locationInvestment;
+                                if ($locationInvestment) {
+                                    $locationInvestment->increment('total_invested', $record->amount);
+
+                                    $existingInvestorCount = Investment::where('location_id', $record->location_id)
+                                        ->where('user_id', $record->user_id)
+                                        ->where('status', 'completed')
+                                        ->count();
+
+                                    if ($existingInvestorCount === 1) {
+                                        $locationInvestment->increment('total_investors');
+                                    }
+                                }
+                            }
                         }),
 
                     Tables\Actions\BulkAction::make('export')
                         ->label('Export to CSV')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->action(function ($records) {
-                            // You can implement CSV export logic here
                             return response()->streamDownload(function () use ($records) {
                                 $csv = fopen('php://output', 'w');
-                                
+
                                 // Headers
                                 fputcsv($csv, [
                                     'Reference',
@@ -328,11 +558,14 @@ class InvestmentResource extends Resource
                                     'Location',
                                     'Amount',
                                     'Currency',
+                                    'Payment Method',
                                     'Status',
                                     'Investment Date',
+                                    'Bank Transfer Confirmed',
+                                    'Confirmed By',
                                     'Created At'
                                 ]);
-                                
+
                                 // Data
                                 foreach ($records as $record) {
                                     fputcsv($csv, [
@@ -342,12 +575,15 @@ class InvestmentResource extends Resource
                                         $record->location->name,
                                         $record->amount,
                                         $record->currency,
+                                        $record->payment_method,
                                         $record->status,
                                         $record->invested_at?->format('Y-m-d H:i:s'),
+                                        $record->bank_transfer_confirmed_at?->format('Y-m-d H:i:s'),
+                                        $record->confirmedByAdmin?->name,
                                         $record->created_at->format('Y-m-d H:i:s'),
                                     ]);
                                 }
-                                
+
                                 fclose($csv);
                             }, 'investments-' . now()->format('Y-m-d') . '.csv');
                         }),
@@ -377,12 +613,20 @@ class InvestmentResource extends Resource
 
     public static function getNavigationBadge(): ?string
     {
-        return static::getModel()::where('status', 'pending')->count() ?: null;
+        $pendingCount = static::getModel()::where('status', 'pending')->count();
+        $bankTransferCount = static::getModel()::where('payment_method', 'bank_transfer')
+            ->where('status', 'pending')->count();
+
+        return $bankTransferCount > 0 ? $bankTransferCount : ($pendingCount ?: null);
     }
 
     public static function getNavigationBadgeColor(): ?string
     {
+        $bankTransferCount = static::getModel()::where('payment_method', 'bank_transfer')
+            ->where('status', 'pending')->count();
         $pendingCount = static::getModel()::where('status', 'pending')->count();
-        return $pendingCount > 10 ? 'danger' : ($pendingCount > 0 ? 'warning' : null);
+
+        return $bankTransferCount > 5 ? 'danger' : ($bankTransferCount > 0 ? 'warning' :
+            ($pendingCount > 10 ? 'danger' : ($pendingCount > 0 ? 'warning' : null)));
     }
 }

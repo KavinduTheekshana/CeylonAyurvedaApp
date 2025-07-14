@@ -4,8 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
@@ -17,6 +16,7 @@ return new class extends Migration
             $table->foreignId('location_id')->constrained()->onDelete('cascade');
             $table->decimal('amount', 10, 2); // Investment amount in GBP
             $table->string('currency', 3)->default('GBP');
+            $table->string('payment_method')->default('card');
             $table->enum('status', ['pending', 'processing', 'completed', 'failed', 'refunded'])->default('pending');
             $table->string('stripe_payment_intent_id')->nullable();
             $table->string('stripe_payment_method_id')->nullable();
@@ -24,11 +24,15 @@ return new class extends Migration
             $table->text('notes')->nullable();
             $table->timestamp('invested_at')->nullable(); // When investment was completed
             $table->json('stripe_metadata')->nullable(); // Store additional Stripe data
+            $table->text('bank_transfer_details')->nullable(); // Admin notes for bank transfer
+            $table->timestamp('bank_transfer_confirmed_at')->nullable(); // When bank transfer was confirmed
+            $table->foreignId('confirmed_by_admin_id')->nullable()->constrained('users'); // Which admin confirmed
             $table->timestamps();
 
             // Indexes for better performance
             $table->index(['user_id', 'location_id']);
             $table->index(['status', 'created_at']);
+            $table->index(['payment_method', 'status']);
             $table->index('reference');
         });
 

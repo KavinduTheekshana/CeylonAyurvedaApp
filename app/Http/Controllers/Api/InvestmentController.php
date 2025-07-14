@@ -20,6 +20,9 @@ use Stripe\PaymentIntent;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\InvestmentConfirmationMail;
 use Illuminate\Support\Facades\Log;
+use App\Mail\BankTransferRequestMail;
+use App\Mail\BankTransferConfirmedMail;
+use App\Mail\AdminBankTransferNotificationMail;
 
 class InvestmentController extends Controller
 {
@@ -30,37 +33,29 @@ class InvestmentController extends Controller
         $this->investmentService = $investmentService;
     }
 
-    public function createInvestment(Request $request)
+    /**
+     * Create new investment with support for card and bank transfer payments
+     */
+    public function createInvestment(Request $request): JsonResponse
     {
         $request->validate([
             'location_id' => 'required|exists:locations,id',
             'amount' => 'required|numeric|min:10|max:10000',
             'notes' => 'nullable|string|max:1000',
+            'payment_method' => 'required|in:card,bank_transfer',
         ]);
 
         try {
             DB::beginTransaction();
 
-            // Set Stripe API key
-            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
-
-            $user = auth()->user();
+            $user = Auth::user();
             $locationId = $request->location_id;
             $amount = $request->amount;
+            $paymentMethod = $request->payment_method;
+
 
             // Check if location is open for investment
-            $locationInvestment = LocationInvestment::where('location_id', $locationId)->first();
-
-            if (!$locationInvestment) {
-                // Create location investment record if it doesn't exist
-                $locationInvestment = LocationInvestment::create([
-                    'location_id' => $locationId,
-                    'total_invested' => 0,
-                    'investment_limit' => 10000,
-                    'total_investors' => 0,
-                    'is_open_for_investment' => true,
-                ]);
-            }
+            $locationInvestment = $this->getOrCreateLocationInvestment($locationId);
 
             if (!$locationInvestment->is_open_for_investment) {
                 return response()->json([
@@ -79,7 +74,7 @@ class InvestmentController extends Controller
             }
 
             // Generate unique reference
-            $reference = 'INV-' . strtoupper(Str::random(8));
+            $reference = $this->generateInvestmentReference();
 
             // Create investment record
             $investment = Investment::create([
@@ -87,54 +82,26 @@ class InvestmentController extends Controller
                 'location_id' => $locationId,
                 'amount' => $amount,
                 'currency' => 'GBP',
+                'payment_method' => $paymentMethod,
                 'status' => 'pending',
                 'reference' => $reference,
-                'invested_at' => now(),
+                'invested_at' => $paymentMethod === 'card' ? now() : null,
                 'notes' => $request->notes,
             ]);
 
-            // Create Stripe PaymentIntent
-            $paymentIntent = PaymentIntent::create([
-                'amount' => $amount * 100, // Amount in pence
-                'currency' => 'gbp',
-                'metadata' => [
-                    'investment_id' => $investment->id,
-                    'user_id' => $user->id,
-                    'location_id' => $locationId,
-                    'reference' => $reference,
-                ],
-            ]);
-
-            // Update investment with Stripe payment intent ID
-            $investment->update([
-                'stripe_payment_intent_id' => $paymentIntent->id,
-                'stripe_metadata' => json_encode($paymentIntent->toArray()),
-            ]);
-
-            // Create transaction record
-            InvestmentTransaction::create([
-                'investment_id' => $investment->id,
-                'type' => 'payment',
-                'amount' => $amount,
-                'stripe_transaction_id' => $paymentIntent->id,
-                'status' => 'pending',
-                'stripe_response' => json_encode($paymentIntent->toArray()),
-            ]);
+            // Handle different payment methods
+            if ($paymentMethod === 'card') {
+                $result = $this->processCardPayment($investment, $amount, $reference);
+            } else {
+                $result = $this->processBankTransferPayment($investment);
+            }
 
             DB::commit();
+            return $result;
 
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'investment' => $investment,
-                    'payment_intent' => [
-                        'client_secret' => $paymentIntent->client_secret,
-                        'payment_intent_id' => $paymentIntent->id,
-                    ],
-                ]
-            ]);
         } catch (ApiErrorException $e) {
             DB::rollback();
+            Log::error('Stripe API error', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Payment processing failed',
@@ -142,6 +109,7 @@ class InvestmentController extends Controller
             ], 500);
         } catch (\Exception $e) {
             DB::rollback();
+            Log::error('Investment creation failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create investment',
@@ -150,12 +118,80 @@ class InvestmentController extends Controller
         }
     }
 
-    public function getLocationInvestors($locationId)
+    /**
+     * Confirm bank transfer by admin
+     */
+    public function confirmBankTransfer(Request $request, $investmentId): JsonResponse
+    {
+        $request->validate([
+            'bank_transfer_details' => 'required|string|max:1000',
+            'confirmed' => 'required|boolean',
+        ]);
+
+        try {
+            $investment = Investment::findOrFail($investmentId);
+
+            // Authorization check - only admin can confirm
+            if (!Auth::user()->hasRole('admin')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            // Validate investment type and status
+            if ($investment->payment_method !== 'bank_transfer') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This investment is not a bank transfer'
+                ], 400);
+            }
+
+            if ($investment->status === 'completed') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This investment is already confirmed'
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            if ($request->confirmed) {
+                $this->confirmBankTransferPayment($investment, $request->bank_transfer_details);
+                $message = 'Bank transfer confirmed successfully';
+            } else {
+                $this->rejectBankTransferPayment($investment, $request->bank_transfer_details);
+                $message = 'Bank transfer rejected';
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'data' => $investment->fresh(),
+                'message' => $message
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            Log::error('Bank transfer confirmation failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to process bank transfer confirmation',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get investors for a specific location
+     */
+    public function getLocationInvestors($locationId): JsonResponse
     {
         try {
             $investors = Investment::where('location_id', $locationId)
                 ->where('status', 'completed')
-                ->with('user')
+                ->with('user:id,name')
                 ->orderBy('invested_at', 'desc')
                 ->get()
                 ->map(function ($investment) {
@@ -174,6 +210,7 @@ class InvestmentController extends Controller
                 'data' => $investors
             ]);
         } catch (\Exception $e) {
+            Log::error('Failed to fetch investors', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch investors',
@@ -182,14 +219,17 @@ class InvestmentController extends Controller
         }
     }
 
-    public function getUserInvestments(Request $request)
+    /**
+     * Get paginated user investments
+     */
+    public function getUserInvestments(Request $request): JsonResponse
     {
         try {
-            $user = auth()->user();
-            $perPage = $request->get('per_page', 15);
+            $user = Auth::user();
+            $perPage = min($request->get('per_page', 15), 100); // Limit max per page
 
             $investments = Investment::where('user_id', $user->id)
-                ->with(['location', 'transactions'])
+                ->with(['location:id,name,city', 'transactions'])
                 ->orderBy('created_at', 'desc')
                 ->paginate($perPage);
 
@@ -205,6 +245,7 @@ class InvestmentController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
+            Log::error('Failed to fetch user investments', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch investments',
@@ -213,24 +254,24 @@ class InvestmentController extends Controller
         }
     }
 
-
     /**
      * Get all investments for authenticated user
      */
     public function index(Request $request): JsonResponse
     {
         $user = Auth::user();
+        $perPage = min($request->get('per_page', 15), 100);
 
         $investments = $user->investments()
             ->with(['location:id,name,city', 'transactions'])
             ->orderBy('created_at', 'desc')
-            ->paginate($request->get('per_page', 15));
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,
             'data' => $investments,
             'meta' => [
-                'total_invested' => $user->total_invested,
+                'total_invested' => $user->total_invested ?? 0,
             ]
         ]);
     }
@@ -256,7 +297,7 @@ class InvestmentController extends Controller
     }
 
     /**
-     * Create new investment
+     * Create new investment using InvestmentService
      */
     public function store(InvestmentRequest $request): JsonResponse
     {
@@ -264,7 +305,11 @@ class InvestmentController extends Controller
             $location = Location::findOrFail($request->location_id);
             $user = Auth::user();
 
-            Log::info('Creating investment for user: ' . $user->id . ', location: ' . $location->id . ', amount: ' . $request->amount);
+            Log::info('Creating investment via service', [
+                'user_id' => $user->id,
+                'location_id' => $location->id,
+                'amount' => $request->amount
+            ]);
 
             $investment = $this->investmentService->createInvestment(
                 $user,
@@ -276,7 +321,7 @@ class InvestmentController extends Controller
             // Create payment intent
             $paymentData = $this->investmentService->createPaymentIntent($investment);
 
-            Log::info('Investment created successfully with ID: ' . $investment->id);
+            Log::info('Investment created successfully', ['investment_id' => $investment->id]);
 
             return response()->json([
                 'success' => true,
@@ -287,7 +332,7 @@ class InvestmentController extends Controller
                 'message' => 'Investment created successfully'
             ], 201);
         } catch (\Exception $e) {
-            Log::error('Error creating investment: ' . $e->getMessage());
+            Log::error('Error creating investment via service', ['error' => $e->getMessage()]);
 
             return response()->json([
                 'success' => false,
@@ -299,7 +344,7 @@ class InvestmentController extends Controller
     /**
      * Get investment opportunities (locations)
      */
-    public function getOpportunities()
+    public function getOpportunities(): JsonResponse
     {
         try {
             $locations = Location::active()
@@ -307,18 +352,7 @@ class InvestmentController extends Controller
                 ->orderBy('name')
                 ->get()
                 ->map(function ($location) {
-                    // Create location investment record if it doesn't exist
-                    if (!$location->locationInvestment) {
-                        $location->locationInvestment = LocationInvestment::create([
-                            'location_id' => $location->id,
-                            'total_invested' => 0,
-                            'investment_limit' => 10000,
-                            'total_investors' => 0,
-                            'is_open_for_investment' => true,
-                        ]);
-                    }
-
-                    $investment = $location->locationInvestment;
+                    $investment = $this->getOrCreateLocationInvestment($location->id);
 
                     return [
                         'id' => $location->id,
@@ -341,6 +375,7 @@ class InvestmentController extends Controller
                 'data' => $locations,
             ]);
         } catch (\Exception $e) {
+            Log::error('Failed to fetch investment opportunities', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch investment opportunities',
@@ -352,12 +387,10 @@ class InvestmentController extends Controller
     /**
      * Get location investment details
      */
-    public function getLocationDetails($locationId)
+    public function getLocationDetails($locationId): JsonResponse
     {
         try {
-            $location = Location::active()
-                ->with(['locationInvestment'])
-                ->find($locationId);
+            $location = Location::active()->find($locationId);
 
             if (!$location) {
                 return response()->json([
@@ -366,16 +399,7 @@ class InvestmentController extends Controller
                 ], 404);
             }
 
-            // Create location investment record if it doesn't exist
-            if (!$location->locationInvestment) {
-                $location->locationInvestment = LocationInvestment::create([
-                    'location_id' => $location->id,
-                    'total_invested' => 0,
-                    'investment_limit' => 10000,
-                    'total_investors' => 0,
-                    'is_open_for_investment' => true,
-                ]);
-            }
+            $investment = $this->getOrCreateLocationInvestment($locationId);
 
             // Get recent investments for this location
             $recentInvestments = $location->investments()
@@ -391,8 +415,6 @@ class InvestmentController extends Controller
                         'invested_at' => $investment->created_at->toISOString(),
                     ];
                 });
-
-            $investment = $location->locationInvestment;
 
             $data = [
                 'id' => $location->id,
@@ -417,6 +439,7 @@ class InvestmentController extends Controller
                 'data' => $data,
             ]);
         } catch (\Exception $e) {
+            Log::error('Failed to fetch location details', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch location details',
@@ -428,7 +451,7 @@ class InvestmentController extends Controller
     /**
      * Confirm payment (webhook or client confirmation)
      */
-    public function confirmPayment(Request $request)
+    public function confirmPayment(Request $request): JsonResponse
     {
         $request->validate([
             'payment_intent_id' => 'required|string',
@@ -436,6 +459,9 @@ class InvestmentController extends Controller
 
         try {
             DB::beginTransaction();
+
+            // Set Stripe API key
+            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
 
             // Retrieve payment intent from Stripe
             $paymentIntent = PaymentIntent::retrieve($request->payment_intent_id);
@@ -457,6 +483,15 @@ class InvestmentController extends Controller
                 ], 404);
             }
 
+            // Prevent double processing
+            if ($investment->status === 'completed') {
+                return response()->json([
+                    'success' => true,
+                    'data' => $investment,
+                    'message' => 'Investment already completed'
+                ]);
+            }
+
             // Update investment status
             $investment->update([
                 'status' => 'completed',
@@ -472,38 +507,12 @@ class InvestmentController extends Controller
                 ]);
 
             // Update location investment totals
-            $locationInvestment = LocationInvestment::where('location_id', $investment->location_id)->first();
-
-            if ($locationInvestment) {
-                $locationInvestment->increment('total_invested', $investment->amount);
-
-                // Check if this is a new investor for this location
-                $existingInvestorCount = Investment::where('location_id', $investment->location_id)
-                    ->where('user_id', $investment->user_id)
-                    ->where('status', 'completed')
-                    ->count();
-
-                if ($existingInvestorCount === 1) { // First investment by this user
-                    $locationInvestment->increment('total_investors');
-                }
-
-                // Check if investment limit is reached
-                if ($locationInvestment->total_invested >= $locationInvestment->investment_limit) {
-                    $locationInvestment->update(['is_open_for_investment' => false]);
-                }
-            }
+            $this->updateLocationInvestmentTotals($investment);
 
             DB::commit();
 
             // Send confirmation email
-            try {
-                Log::info('Sending investment confirmation email to user: ' . $investment->user->email);
-                Mail::to($investment->user->email)->send(new InvestmentConfirmationMail($investment));
-                // Mail::to('kavindutheekshana@gmail.com')->send(new InvestmentConfirmationMail($investment));
-            } catch (\Exception $emailException) {
-                // Log email error but don't fail the response
-                Log::error('Failed to send investment confirmation email: ' . $emailException->getMessage());
-            }
+            $this->sendInvestmentConfirmationEmail($investment);
 
             return response()->json([
                 'success' => true,
@@ -514,6 +523,7 @@ class InvestmentController extends Controller
             ]);
         } catch (ApiErrorException $e) {
             DB::rollback();
+            Log::error('Stripe API error during payment confirmation', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Payment confirmation failed',
@@ -521,6 +531,7 @@ class InvestmentController extends Controller
             ], 500);
         } catch (\Exception $e) {
             DB::rollback();
+            Log::error('Payment confirmation failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to confirm payment',
@@ -532,7 +543,7 @@ class InvestmentController extends Controller
     /**
      * Get user investment summary
      */
-    public function getUserSummary()
+    public function getUserSummary(): JsonResponse
     {
         try {
             $user = Auth::user();
@@ -575,6 +586,7 @@ class InvestmentController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
+            Log::error('Failed to fetch user investment summary', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch user investment summary',
@@ -605,11 +617,228 @@ class InvestmentController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
+            Log::error('API test failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'API test failed',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Private helper methods
+     */
+    private function getOrCreateLocationInvestment($locationId): LocationInvestment
+    {
+        return LocationInvestment::firstOrCreate(
+            ['location_id' => $locationId],
+            [
+                'total_invested' => 0,
+                'investment_limit' => 10000,
+                'total_investors' => 0,
+                'is_open_for_investment' => true,
+            ]
+        );
+    }
+
+    private function generateInvestmentReference(): string
+    {
+        do {
+            $reference = 'INV-' . strtoupper(Str::random(8));
+        } while (Investment::where('reference', $reference)->exists());
+
+        return $reference;
+    }
+
+    private function processCardPayment(Investment $investment, float $amount, string $reference): JsonResponse
+    {
+        \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+
+        $paymentIntent = PaymentIntent::create([
+            'amount' => $amount * 100, // Amount in pence
+            'currency' => 'gbp',
+            'metadata' => [
+                'investment_id' => $investment->id,
+                'user_id' => $investment->user_id,
+                'location_id' => $investment->location_id,
+                'reference' => $reference,
+            ],
+        ]);
+
+        // Update investment with Stripe payment intent ID
+        $investment->update([
+            'stripe_payment_intent_id' => $paymentIntent->id,
+            'stripe_metadata' => json_encode($paymentIntent->toArray()),
+        ]);
+
+        // Create transaction record
+        InvestmentTransaction::create([
+            'investment_id' => $investment->id,
+            'type' => 'payment',
+            'amount' => $amount,
+            'stripe_transaction_id' => $paymentIntent->id,
+            'status' => 'pending',
+            'stripe_response' => json_encode($paymentIntent->toArray()),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'investment' => $investment,
+                'payment_intent' => [
+                    'client_secret' => $paymentIntent->client_secret,
+                    'payment_intent_id' => $paymentIntent->id,
+                ],
+            ]
+        ]);
+    }
+
+    private function processBankTransferPayment(Investment $investment): JsonResponse
+    {
+        // Send notification to admin team
+        $this->notifyAdminTeamOfBankTransferRequest($investment);
+
+        // Send confirmation email to user
+        $this->sendBankTransferRequestEmail($investment);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'investment' => $investment,
+                'message' => 'Investment request submitted successfully. You will receive an email confirmation shortly, and our admin team will contact you within 24 hours with bank transfer details.'
+            ]
+        ]);
+    }
+
+    private function sendBankTransferRequestEmail(Investment $investment): void
+    {
+        try {
+            Log::info('Sending bank transfer request email', [
+                'investment_id' => $investment->id,
+                'user_email' => $investment->user->email
+            ]);
+
+            Mail::to($investment->user->email)->send(new BankTransferRequestMail($investment));
+
+            Log::info('Bank transfer request email sent successfully', [
+                'investment_id' => $investment->id
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send bank transfer request email', [
+                'investment_id' => $investment->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+    private function confirmBankTransferPayment(Investment $investment, string $bankTransferDetails): void
+    {
+        $investment->update([
+            'status' => 'completed',
+            'bank_transfer_details' => $bankTransferDetails,
+            'bank_transfer_confirmed_at' => now(),
+            'confirmed_by_admin_id' => Auth::id(),
+            'invested_at' => now(),
+        ]);
+
+        $this->updateLocationInvestmentTotals($investment);
+
+        InvestmentTransaction::create([
+            'investment_id' => $investment->id,
+            'type' => 'bank_transfer',
+            'amount' => $investment->amount,
+            'status' => 'completed',
+            'stripe_response' => json_encode(['bank_transfer_confirmed' => true]),
+        ]);
+
+        Log::info('Bank transfer confirmed', ['investment_id' => $investment->id]);
+        // Send confirmation email to investor
+        $this->sendBankTransferConfirmationEmail($investment);
+    }
+
+    private function sendBankTransferConfirmationEmail(Investment $investment): void
+{
+    try {
+        Log::info('Sending bank transfer confirmation email', [
+            'investment_id' => $investment->id,
+            'user_email' => $investment->user->email
+        ]);
+        
+        Mail::to($investment->user->email)->send(new BankTransferConfirmedMail($investment));
+        
+        Log::info('Bank transfer confirmation email sent successfully', [
+            'investment_id' => $investment->id
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Failed to send bank transfer confirmation email', [
+            'investment_id' => $investment->id,
+            'error' => $e->getMessage()
+        ]);
+    }
+}
+
+    private function rejectBankTransferPayment(Investment $investment, string $bankTransferDetails): void
+    {
+        $investment->update([
+            'status' => 'failed',
+            'bank_transfer_details' => $bankTransferDetails,
+            'confirmed_by_admin_id' => Auth::id(),
+        ]);
+    }
+
+    private function updateLocationInvestmentTotals(Investment $investment): void
+    {
+        $locationInvestment = LocationInvestment::where('location_id', $investment->location_id)->first();
+
+        if ($locationInvestment) {
+            $locationInvestment->increment('total_invested', $investment->amount);
+
+            // Check if this is a new investor for this location
+            $existingInvestorCount = Investment::where('location_id', $investment->location_id)
+                ->where('user_id', $investment->user_id)
+                ->where('status', 'completed')
+                ->count();
+
+            if ($existingInvestorCount === 1) { // First investment by this user
+                $locationInvestment->increment('total_investors');
+            }
+
+            // Check if investment limit is reached
+            if ($locationInvestment->total_invested >= $locationInvestment->investment_limit) {
+                $locationInvestment->update(['is_open_for_investment' => false]);
+            }
+        }
+    }
+
+    private function sendInvestmentConfirmationEmail(Investment $investment): void
+    {
+        try {
+            Log::info('Sending investment confirmation email', ['user_email' => $investment->user->email]);
+            Mail::to($investment->user->email)->send(new InvestmentConfirmationMail($investment));
+        } catch (\Exception $emailException) {
+            Log::error('Failed to send investment confirmation email', ['error' => $emailException->getMessage()]);
+        }
+    }
+
+    private function notifyAdminTeamOfBankTransferRequest(Investment $investment): void
+    {
+        try {
+            // Send notification email to admin team
+            $adminEmails = config('mail.admin_emails', ['admin@example.com']);
+
+            foreach ($adminEmails as $adminEmail) {
+                Mail::to($adminEmail)->send(new AdminBankTransferNotificationMail($investment));
+            }
+
+            Log::info('Admin notification sent for bank transfer request', [
+                'investment_id' => $investment->id,
+                'admin_emails' => $adminEmails
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send admin notification for bank transfer', [
+                'investment_id' => $investment->id,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 }
