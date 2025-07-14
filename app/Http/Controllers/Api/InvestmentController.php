@@ -348,12 +348,12 @@ class InvestmentController extends Controller
     {
         try {
             $locations = Location::active()
-                ->with('locationInvestment')
+                ->with(['locationInvestment', 'therapists']) // Load therapists too
                 ->orderBy('name')
                 ->get()
                 ->map(function ($location) {
                     $investment = $this->getOrCreateLocationInvestment($location->id);
-
+    
                     return [
                         'id' => $location->id,
                         'name' => $location->name,
@@ -361,15 +361,35 @@ class InvestmentController extends Controller
                         'address' => $location->address,
                         'description' => $location->description,
                         'image' => $location->image_url,
+                        'owner_name' => $location->owner_name,
+                        'owner_email' => $location->owner_email,
+                        'manager_name' => $location->manager_name,
+                        'manager_email' => $location->manager_email,
+                        'branch_phone' => $location->branch_phone,
+                        
                         'total_invested' => (float) $investment->total_invested,
                         'investment_limit' => (float) $investment->investment_limit,
                         'total_investors' => (int) $investment->total_investors,
                         'is_open_for_investment' => (bool) $investment->is_open_for_investment,
                         'remaining_amount' => (float) $investment->remaining_amount,
                         'progress_percentage' => (float) $investment->progress_percentage,
+    
+                        // Include therapists list
+                        'therapists' => $location->therapists->map(function ($therapist) {
+                            return [
+                                'id' => $therapist->id,
+                                'name' => $therapist->name,
+                                'email' => $therapist->email,
+                                'phone' => $therapist->phone,
+                                'image' => $therapist->image,
+                                'bio' => $therapist->bio,
+                                'work_start_date' => $therapist->work_start_date,
+                                'status' => (bool) $therapist->status,
+                            ];
+                        }),
                     ];
                 });
-
+    
             return response()->json([
                 'success' => true,
                 'data' => $locations,
@@ -383,6 +403,7 @@ class InvestmentController extends Controller
             ], 500);
         }
     }
+    
 
     /**
      * Get location investment details

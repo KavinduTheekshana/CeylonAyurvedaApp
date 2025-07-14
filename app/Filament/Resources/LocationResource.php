@@ -76,8 +76,55 @@ class LocationResource extends Resource
                             ->maxLength(255),
                     ]),
 
+                Forms\Components\Grid::make(2)
+                    ->schema([
+                        Forms\Components\TextInput::make('branch_phone')
+                            ->label('Branch Phone')
+                            ->tel()
+                            ->maxLength(20),
+
+                        Forms\Components\TextInput::make('service_radius_miles')
+                            ->numeric()
+                            ->default(5)
+                            ->suffix('miles'),
+                    ]),
+
                 Forms\Components\Textarea::make('description')
                     ->maxLength(1000),
+
+                // Owner Information Section
+                Forms\Components\Section::make('Owner Information')
+                    ->schema([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('owner_name')
+                                    ->label('Owner Name')
+                                    ->maxLength(255),
+
+                                Forms\Components\TextInput::make('owner_email')
+                                    ->label('Owner Email')
+                                    ->email()
+                                    ->maxLength(255),
+                            ]),
+                    ])
+                    ->collapsible(),
+
+                // Manager Information Section
+                Forms\Components\Section::make('Manager Information')
+                    ->schema([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('manager_name')
+                                    ->label('Manager Name')
+                                    ->maxLength(255),
+
+                                Forms\Components\TextInput::make('manager_email')
+                                    ->label('Manager Email')
+                                    ->email()
+                                    ->maxLength(255),
+                            ]),
+                    ])
+                    ->collapsible(),
 
                 Forms\Components\KeyValue::make('operating_hours')
                     ->keyLabel('Day')
@@ -97,11 +144,6 @@ class LocationResource extends Resource
                     ->image()
                     ->imageResizeMode('cover')
                     ->imageCropAspectRatio('16:9'),
-
-                Forms\Components\TextInput::make('service_radius_miles')
-                    ->numeric()
-                    ->default(5)
-                    ->suffix('miles'),
 
                 Forms\Components\Toggle::make('status')
                     ->label('Active')
@@ -133,11 +175,25 @@ class LocationResource extends Resource
                 Tables\Columns\TextColumn::make('postcode')
                     ->searchable(),
 
+                Tables\Columns\TextColumn::make('owner_name')
+                    ->label('Owner')
+                    ->searchable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('manager_name')
+                    ->label('Manager')
+                    ->searchable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('branch_phone')
+                    ->label('Branch Phone')
+                    ->searchable()
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('therapists_count')
                     ->counts('therapists')
                     ->badge()
                     ->color('primary'),
-
 
                 Tables\Columns\IconColumn::make('status')
                     ->boolean(),

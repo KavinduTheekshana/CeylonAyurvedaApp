@@ -23,7 +23,12 @@ class Location extends Model
         'operating_hours',
         'image',
         'status',
-        'service_radius_miles'
+        'service_radius_miles',
+        'owner_name',
+        'owner_email',
+        'manager_name',
+        'manager_email',
+        'branch_phone'
     ];
 
     protected $casts = [
