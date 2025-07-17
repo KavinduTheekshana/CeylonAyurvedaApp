@@ -572,7 +572,7 @@
             </div>
             
             <div class="footer-contact">
-                <a href="mailto:info@ceylonayurvedahealth.com">📧 info@ceylonayurvedahealth.com</a> <br>
+                <a href="mailto:info@ceylonayurvedahealth.com">📧 info@ceylonayurvedahealth.co.uk</a> <br>
                 <a href="tel:+442071836484">📞 0207 183 6484</a><br>
                 <a href="https://www.ceylonayurvedahealth.co.uk">🌐 www.ceylonayurvedahealth.co.uk</a>
             </div>
