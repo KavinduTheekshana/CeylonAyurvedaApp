@@ -78,10 +78,6 @@ class LocationResource extends Resource
 
                 Forms\Components\Grid::make(2)
                     ->schema([
-                        Forms\Components\TextInput::make('branch_phone')
-                            ->label('Branch Phone')
-                            ->tel()
-                            ->maxLength(20),
 
                         Forms\Components\TextInput::make('service_radius_miles')
                             ->numeric()
@@ -92,37 +88,40 @@ class LocationResource extends Resource
                 Forms\Components\Textarea::make('description')
                     ->maxLength(1000),
 
-                // Owner Information Section
-                Forms\Components\Section::make('Owner Information')
+                // Franchisee Information Section
+                Forms\Components\Section::make('Franchisee Information')
                     ->schema([
                         Forms\Components\Grid::make(2)
                             ->schema([
-                                Forms\Components\TextInput::make('owner_name')
-                                    ->label('Owner Name')
+                                Forms\Components\TextInput::make('franchisee_name')
+                                    ->label('Franchisee Name')
                                     ->maxLength(255),
 
-                                Forms\Components\TextInput::make('owner_email')
-                                    ->label('Owner Email')
+                                Forms\Components\TextInput::make('franchisee_email')
+                                    ->label('Franchisee Email')
                                     ->email()
                                     ->maxLength(255),
                             ]),
-                    ])
-                    ->collapsible(),
 
-                // Manager Information Section
-                Forms\Components\Section::make('Manager Information')
-                    ->schema([
                         Forms\Components\Grid::make(2)
                             ->schema([
-                                Forms\Components\TextInput::make('manager_name')
-                                    ->label('Manager Name')
-                                    ->maxLength(255),
+                                Forms\Components\TextInput::make('franchisee_phone')
+                                    ->label('Franchisee Phone')
+                                    ->tel()
+                                    ->maxLength(20),
 
-                                Forms\Components\TextInput::make('manager_email')
-                                    ->label('Manager Email')
-                                    ->email()
-                                    ->maxLength(255),
+                                Forms\Components\DatePicker::make('franchisee_activate_date')
+                                    ->label('Franchisee Activation Date')
+                                    ->native(false),
                             ]),
+
+                        Forms\Components\FileUpload::make('franchisee_photo')
+                            ->label('Franchisee Photo')
+                            ->directory('franchisees')
+                            ->image()
+                            ->imageResizeMode('cover')
+                            ->imageCropAspectRatio('1:1')
+                            ->maxSize(2048),
                     ])
                     ->collapsible(),
 
@@ -175,19 +174,25 @@ class LocationResource extends Resource
                 Tables\Columns\TextColumn::make('postcode')
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('owner_name')
-                    ->label('Owner')
+                Tables\Columns\TextColumn::make('franchisee_name')
+                    ->label('Franchisee')
                     ->searchable()
                     ->toggleable(),
 
-                Tables\Columns\TextColumn::make('manager_name')
-                    ->label('Manager')
+                Tables\Columns\TextColumn::make('franchisee_phone')
+                    ->label('Franchisee Phone')
                     ->searchable()
                     ->toggleable(),
 
-                Tables\Columns\TextColumn::make('branch_phone')
+                Tables\Columns\TextColumn::make('phone')
                     ->label('Branch Phone')
                     ->searchable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('franchisee_activate_date')
+                    ->label('Activation Date')
+                    ->date()
+                    ->sortable()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('therapists_count')

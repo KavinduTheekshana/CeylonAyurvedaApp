@@ -24,11 +24,11 @@ class Location extends Model
         'image',
         'status',
         'service_radius_miles',
-        'owner_name',
-        'owner_email',
-        'manager_name',
-        'manager_email',
-        'branch_phone'
+        'franchisee_name',
+        'franchisee_email',
+        'franchisee_phone',
+        'franchisee_photo',
+        'franchisee_activate_date'
     ];
 
     protected $casts = [

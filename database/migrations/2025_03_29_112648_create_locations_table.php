@@ -23,11 +23,11 @@ return new class extends Migration
             $table->string('image')->nullable();
             $table->boolean('status')->default(true);
             $table->integer('service_radius_miles')->default(5);
-            $table->string('owner_name')->nullable();
-            $table->string('owner_email')->nullable();
-            $table->string('manager_name')->nullable();
-            $table->string('manager_email')->nullable();
-            $table->string('branch_phone')->nullable();
+            $table->string('franchisee_name')->nullable();
+            $table->string('franchisee_email')->nullable();
+            $table->string('franchisee_phone')->nullable();
+            $table->string('franchisee_photo')->nullable();
+            $table->string('franchisee_activate_date')->nullable();
             $table->timestamps();
         });
     }
