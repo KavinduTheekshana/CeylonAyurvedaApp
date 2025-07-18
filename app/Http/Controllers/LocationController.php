@@ -37,10 +37,10 @@ class LocationController extends Controller
 
             // Get recent investments with investor names
             $recentInvestments = Investment::where('location_id', $locationId)
-                ->where('status', 'completed')
+                // ->where('status', 'completed')
                 ->with('user')
                 ->orderBy('invested_at', 'desc')
-                ->limit(10)
+                ->limit(5)
                 ->get()
                 ->map(function ($investment) {
                     return [
@@ -49,6 +49,7 @@ class LocationController extends Controller
                         'investor_name' => $investment->user->name,
                         'invested_at' => $investment->invested_at,
                         'status' => $investment->status,
+                        'payment_method' => $investment->payment_method,
                         'reference' => $investment->reference,
                     ];
                 });

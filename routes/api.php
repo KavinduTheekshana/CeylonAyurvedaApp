@@ -130,6 +130,7 @@ Route::prefix('contact')->group(function () {
 // Public routes (no auth required)
 Route::get('/test', [InvestmentController::class, 'test']);
 Route::get('/investments/opportunities', [InvestmentController::class, 'getOpportunities']);
+Route::get('/opportunities/{locationId}', [InvestmentController::class, 'getOpportunity']);
 Route::get('/locations/{locationId}', [InvestmentController::class, 'getLocationDetails']);
 
 // Protected routes (require authentication)

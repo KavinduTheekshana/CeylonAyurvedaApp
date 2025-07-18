@@ -33,6 +33,10 @@ class InvestmentController extends Controller
         $this->investmentService = $investmentService;
     }
 
+
+
+
+
     /**
      * Create new investment with support for card and bank transfer payments
      */
@@ -190,7 +194,6 @@ class InvestmentController extends Controller
     {
         try {
             $investors = Investment::where('location_id', $locationId)
-                ->where('status', 'completed')
                 ->with('user:id,name')
                 ->orderBy('invested_at', 'desc')
                 ->get()
@@ -202,6 +205,12 @@ class InvestmentController extends Controller
                         'invested_at' => $investment->invested_at,
                         'status' => $investment->status,
                         'reference' => $investment->reference,
+                        'payment_method' => $investment->payment_method, // Added this field
+                        'currency' => $investment->currency,
+                        'notes' => $investment->notes,
+                        // Additional useful fields
+                        'bank_transfer_confirmed_at' => $investment->bank_transfer_confirmed_at,
+                        'stripe_payment_intent_id' => $investment->stripe_payment_intent_id ? 'stripe_' . substr($investment->stripe_payment_intent_id, -8) : null,
                     ];
                 });
 
@@ -211,6 +220,7 @@ class InvestmentController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch investors', ['error' => $e->getMessage()]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch investors',
@@ -353,7 +363,7 @@ class InvestmentController extends Controller
                 ->get()
                 ->map(function ($location) {
                     $investment = $this->getOrCreateLocationInvestment($location->id);
-    
+
                     return [
                         'id' => $location->id,
                         'name' => $location->name,
@@ -366,14 +376,14 @@ class InvestmentController extends Controller
                         'manager_name' => $location->manager_name,
                         'manager_email' => $location->manager_email,
                         'branch_phone' => $location->branch_phone,
-                        
+
                         'total_invested' => (float) $investment->total_invested,
                         'investment_limit' => (float) $investment->investment_limit,
                         'total_investors' => (int) $investment->total_investors,
                         'is_open_for_investment' => (bool) $investment->is_open_for_investment,
                         'remaining_amount' => (float) $investment->remaining_amount,
                         'progress_percentage' => (float) $investment->progress_percentage,
-    
+
                         // Include therapists list
                         'therapists' => $location->therapists->map(function ($therapist) {
                             return [
@@ -389,7 +399,7 @@ class InvestmentController extends Controller
                         }),
                     ];
                 });
-    
+
             return response()->json([
                 'success' => true,
                 'data' => $locations,
@@ -403,7 +413,69 @@ class InvestmentController extends Controller
             ], 500);
         }
     }
-    
+
+    public function getOpportunity($locationId): JsonResponse
+    {
+        try {
+            $location = Location::active()
+                ->with(['locationInvestment', 'therapists'])
+                ->find($locationId);
+
+            if (!$location) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Location not found',
+                ], 404);
+            }
+
+            $investment = $this->getOrCreateLocationInvestment($location->id);
+
+            $locationData = [
+                'id' => $location->id,
+                'name' => $location->name,
+                'city' => $location->city,
+                'address' => $location->address,
+                'description' => $location->description,
+                'image' => $location->image_url,
+                'owner_name' => $location->owner_name,
+                'owner_email' => $location->owner_email,
+                'manager_name' => $location->manager_name,
+                'manager_email' => $location->manager_email,
+                'branch_phone' => $location->branch_phone,
+                'total_invested' => (float) $investment->total_invested,
+                'investment_limit' => (float) $investment->investment_limit,
+                'total_investors' => (int) $investment->total_investors,
+                'is_open_for_investment' => (bool) $investment->is_open_for_investment,
+                'remaining_amount' => (float) $investment->remaining_amount,
+                'progress_percentage' => (float) $investment->progress_percentage,
+                'therapists' => $location->therapists->map(function ($therapist) {
+                    return [
+                        'id' => $therapist->id,
+                        'name' => $therapist->name,
+                        'email' => $therapist->email,
+                        'phone' => $therapist->phone,
+                        'image' => $therapist->image,
+                        'bio' => $therapist->bio,
+                        'work_start_date' => $therapist->work_start_date,
+                        'status' => (bool) $therapist->status,
+                    ];
+                }),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $locationData,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch investment opportunity', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch investment opportunity',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 
     /**
      * Get location investment details
@@ -422,7 +494,7 @@ class InvestmentController extends Controller
 
             $investment = $this->getOrCreateLocationInvestment($locationId);
 
-            // Get recent investments for this location
+            // Get recent investments for this location with more details
             $recentInvestments = $location->investments()
                 ->with('user:id,name')
                 ->where('status', 'completed')
@@ -431,19 +503,94 @@ class InvestmentController extends Controller
                 ->get()
                 ->map(function ($investment) {
                     return [
+                        'id' => $investment->id,
                         'amount' => (float) $investment->amount,
                         'investor_name' => $investment->user->name ?? 'Anonymous',
                         'invested_at' => $investment->created_at->toISOString(),
+                        'status' => $investment->status,
+                        'reference' => $investment->reference ?? 'N/A',
+                        'payment_method' => $investment->payment_method ?? 'card',
                     ];
                 });
+
+            // Get therapists data manually to avoid relationship issues
+            $therapists = collect();
+            try {
+                // Try to get therapists via the many-to-many relationship
+                $therapistIds = \DB::table('location_therapist')
+                    ->where('location_id', $locationId)
+                    ->pluck('therapist_id');
+
+                if ($therapistIds->isNotEmpty()) {
+                    $therapistsData = \DB::table('therapists')
+                        ->leftJoin('users', function ($join) {
+                            // Handle different possible column names for the relationship
+                            $join->on('therapists.user_id', '=', 'users.id')
+                                ->orOn('therapists.id', '=', 'users.therapist_id');
+                        })
+                        ->whereIn('therapists.id', $therapistIds)
+                        ->select([
+                            'therapists.id',
+                            'therapists.bio',
+                            'therapists.work_start_date',
+                            'therapists.status',
+                            'users.name',
+                            'users.email',
+                            'users.phone',
+                            'users.profile_image'
+                        ])
+                        ->get();
+
+                    $therapists = $therapistsData->map(function ($therapist) {
+                        return [
+                            'id' => $therapist->id,
+                            'name' => $therapist->name ?? 'Unknown',
+                            'email' => $therapist->email ?? '',
+                            'phone' => $therapist->phone ?? '',
+                            'image' => $therapist->profile_image ?
+                                (str_starts_with($therapist->profile_image, 'http') ?
+                                    $therapist->profile_image :
+                                    url('storage/' . $therapist->profile_image)
+                                ) : null,
+                            'bio' => $therapist->bio ?? '',
+                            'work_start_date' => $therapist->work_start_date ?? '',
+                            'status' => $therapist->status ?? true,
+                        ];
+                    });
+                }
+            } catch (\Exception $e) {
+                // If therapists relationship fails, continue without therapists
+                Log::warning('Could not load therapists for location: ' . $e->getMessage());
+                $therapists = collect();
+            }
 
             $data = [
                 'id' => $location->id,
                 'name' => $location->name,
                 'city' => $location->city,
                 'address' => $location->address,
+                'postcode' => $location->postcode ?? '',
+                'phone' => $location->phone,
+                'email' => $location->email,
                 'description' => $location->description,
                 'image' => $location->image_url,
+
+                // Management Information
+                'owner_name' => $location->owner_name,
+                'owner_email' => $location->owner_email,
+                'manager_name' => $location->manager_name,
+                'manager_email' => $location->manager_email,
+                'branch_phone' => $location->branch_phone,
+
+                // Additional Details
+                'operating_hours' => $location->operating_hours ?
+                    json_decode($location->operating_hours, true) : null,
+                'service_radius_miles' => $location->service_radius_miles ?? 5,
+                'latitude' => $location->latitude,
+                'longitude' => $location->longitude,
+                'status' => $location->status,
+
+                // Investment Statistics
                 'investment_stats' => [
                     'total_invested' => (float) $investment->total_invested,
                     'investment_limit' => (float) $investment->investment_limit,
@@ -452,19 +599,41 @@ class InvestmentController extends Controller
                     'total_investors' => (int) $investment->total_investors,
                     'is_open_for_investment' => (bool) $investment->is_open_for_investment,
                 ],
+
+                // Investment Data (keeping original structure for compatibility)
+                'total_invested' => (float) $investment->total_invested,
+                'investment_limit' => (float) $investment->investment_limit,
+                'total_investors' => (int) $investment->total_investors,
+                'is_open_for_investment' => (bool) $investment->is_open_for_investment,
+                'remaining_amount' => (float) $investment->remaining_amount,
+                'progress_percentage' => (float) $investment->progress_percentage,
+
+                // Related Data
                 'recent_investments' => $recentInvestments,
+                'therapists' => $therapists->toArray(),
+
+                // Timestamps
+                'created_at' => $location->created_at,
+                'updated_at' => $location->updated_at,
             ];
 
             return response()->json([
                 'success' => true,
+                'message' => 'Location details retrieved successfully',
                 'data' => $data,
             ]);
+
         } catch (\Exception $e) {
-            Log::error('Failed to fetch location details', ['error' => $e->getMessage()]);
+            Log::error('Failed to fetch location details', [
+                'location_id' => $locationId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch location details',
-                'error' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
             ], 500);
         }
     }
@@ -778,25 +947,25 @@ class InvestmentController extends Controller
     }
 
     private function sendBankTransferConfirmationEmail(Investment $investment): void
-{
-    try {
-        Log::info('Sending bank transfer confirmation email', [
-            'investment_id' => $investment->id,
-            'user_email' => $investment->user->email
-        ]);
-        
-        Mail::to($investment->user->email)->send(new BankTransferConfirmedMail($investment));
-        
-        Log::info('Bank transfer confirmation email sent successfully', [
-            'investment_id' => $investment->id
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Failed to send bank transfer confirmation email', [
-            'investment_id' => $investment->id,
-            'error' => $e->getMessage()
-        ]);
+    {
+        try {
+            Log::info('Sending bank transfer confirmation email', [
+                'investment_id' => $investment->id,
+                'user_email' => $investment->user->email
+            ]);
+
+            Mail::to($investment->user->email)->send(new BankTransferConfirmedMail($investment));
+
+            Log::info('Bank transfer confirmation email sent successfully', [
+                'investment_id' => $investment->id
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send bank transfer confirmation email', [
+                'investment_id' => $investment->id,
+                'error' => $e->getMessage()
+            ]);
+        }
     }
-}
 
     private function rejectBankTransferPayment(Investment $investment, string $bankTransferDetails): void
     {
