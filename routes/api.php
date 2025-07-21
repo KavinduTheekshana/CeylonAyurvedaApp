@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AddressController;
 use App\Http\Controllers\Api\ContactMessageController;
+use App\Http\Controllers\Api\CouponController;
 use App\Http\Controllers\Api\InvestmentController;
 use App\Http\Controllers\Api\TreatmentController;
 use App\Http\Controllers\AuthController;
@@ -160,6 +161,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     //     Route::get('/{investment}', [InvestmentController::class, 'show']);
     //     Route::post('/confirm-payment', [InvestmentController::class, 'confirmPayment']);
     // });
+});
+
+
+Route::post('/coupons/validate', [CouponController::class, 'validateCoupon']);
+Route::get('/services/{serviceId}/coupons', [CouponController::class, 'getServiceCoupons']);
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/user/coupon-history', [CouponController::class, 'getUserCouponHistory']);
 });
 
 // Webhook routes (no auth, but should be protected by webhook signature)

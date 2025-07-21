@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use App\Mail\BookingConfirmation;
+use App\Models\Coupon;
+use App\Models\CouponUsage;
 
 class BookingController extends Controller
 {
@@ -26,7 +28,7 @@ class BookingController extends Controller
             'authorization' => $request->header('Authorization'),
             'content_type' => $request->header('Content-Type')
         ]);
-        
+
         // Validate the booking data - directly accepting address fields or nested object
         $validator = Validator::make($request->all(), [
             'service_id' => 'required|exists:services,id',
@@ -48,9 +50,10 @@ class BookingController extends Controller
             'address.city' => 'required_with:address|string|max:100',
             'address.postcode' => 'required_with:address|string|max:20',
             'notes' => 'nullable|string',
-            'save_address' => 'boolean'
+            'save_address' => 'boolean',
+            'coupon_code' => 'nullable|string',
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -58,16 +61,16 @@ class BookingController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
-        
+
         // IMPORTANT FIX: Get user if authenticated - use auth()->user() as an alternative
         $user = auth()->user();
-        
+
         // Debug user authentication status
         Log::info('User authentication check', [
             'is_authenticated' => $user ? 'Yes' : 'No',
             'user_id' => $user ? $user->id : 'Not authenticated'
         ]);
-        
+
         // If user is not authenticated but token is provided, try to get user from token directly
         if (!$user && $request->bearerToken()) {
             Log::info('Attempting to get user from token directly');
@@ -83,7 +86,7 @@ class BookingController extends Controller
                 Log::error('Error retrieving user from token: ' . $e->getMessage());
             }
         }
-        
+
         // Check service availability
         $service = Service::find($request->service_id);
         if (!$service) {
@@ -92,22 +95,22 @@ class BookingController extends Controller
                 'message' => 'Service not found'
             ], 404);
         }
-        
+
         // Handle address fields (either directly or from nested object)
         $addressLine1 = $request->address_line1 ?? $request->input('address.address_line1', '');
         $addressLine2 = $request->address_line2 ?? $request->input('address.address_line2', '');
         $city = $request->city ?? $request->input('address.city', '');
         $postcode = $request->postcode ?? $request->input('address.postcode', '');
-        
+
         // Save address if requested and user is logged in
         // Fix: Properly check for save_address as a boolean value (could be true, false, 1, 0, "true", "false")
         $saveAddress = filter_var($request->input('save_address', false), FILTER_VALIDATE_BOOLEAN);
-        
+
         Log::info('Save address check', [
             'save_address' => $saveAddress,
             'user_present' => $user ? 'Yes' : 'No'
         ]);
-        
+
         if ($user && $saveAddress) {
             // First check if this exact address already exists for the user
             $existingAddress = Address::where('user_id', $user->id)
@@ -115,7 +118,7 @@ class BookingController extends Controller
                 ->where('city', $city)
                 ->where('postcode', $postcode)
                 ->first();
-                
+
             if (!$existingAddress) {
                 $addressData = [
                     'user_id' => $user->id,
@@ -128,13 +131,13 @@ class BookingController extends Controller
                     'postcode' => $postcode,
                     'is_default' => false // Default to not default
                 ];
-                
+
                 // Check if it's the user's first address
                 $isFirstAddress = Address::where('user_id', $user->id)->count() === 0;
                 if ($isFirstAddress) {
                     $addressData['is_default'] = true;
                 }
-                
+
                 Log::info('Creating new address', $addressData);
                 // Create the address
                 $address = Address::create($addressData);
@@ -151,14 +154,46 @@ class BookingController extends Controller
                 Log::info('Address not saved - save_address flag is false', ['save_address_value' => $request->input('save_address')]);
             }
         }
-        
+
+        // Apply coupon if provided
+        $originalPrice = $service->price;
+        $finalPrice = $originalPrice;
+        $discountAmount = 0;
+        $couponId = null;
+
+        if ($request->coupon_code) {
+            $coupon = Coupon::where('code', strtoupper($request->coupon_code))->first();
+
+            if ($coupon && $coupon->isValid() && $coupon->isValidForService($service->id)) {
+                if ($user && !$coupon->isValidForUser($user->id)) {
+                    return response()->json([
+                        'error' => 'You have already used this coupon the maximum number of times.'
+                    ], 422);
+                }
+
+                if ($coupon->minimum_amount && $originalPrice < $coupon->minimum_amount) {
+                    return response()->json([
+                        'error' => "This coupon requires a minimum purchase of £{$coupon->minimum_amount}."
+                    ], 422);
+                }
+
+                $discountAmount = $coupon->calculateDiscount($originalPrice);
+                $finalPrice = max(0, $originalPrice - $discountAmount);
+                $couponId = $coupon->id;
+            } else {
+                return response()->json([
+                    'error' => 'Invalid or expired coupon code.'
+                ], 422);
+            }
+        }
+
         // Create a unique reference
         $reference = strtoupper(Str::random(8));
         // Ensure reference is unique
         while (Booking::where('reference', $reference)->exists()) {
             $reference = strtoupper(Str::random(8));
         }
-        
+
         // Create the booking with direct address fields
         $booking = new Booking();
         $booking->service_id = $request->service_id;
@@ -176,20 +211,39 @@ class BookingController extends Controller
         $booking->notes = $request->notes;
         $booking->status = 'confirmed'; // Default status based on your schema
         $booking->price = $service->discount_price ?? $service->price;
+         $booking->price = $finalPrice;
+        $booking->original_price = $originalPrice;
+        $booking->discount_amount = $discountAmount;
+        $booking->coupon_id = $couponId;
+        $booking->coupon_code = $request->coupon_code ? strtoupper($request->coupon_code) : null;
         $booking->reference = $reference;
         $booking->save();
-        
+
+        if ($couponId) {
+        $coupon = Coupon::find($couponId);
+        $coupon->incrementUsage();
+
+        CouponUsage::create([
+            'coupon_id' => $couponId,
+            'user_id' => $user ? $user->id : null,
+            'booking_id' => $booking->id,
+            'discount_amount' => $discountAmount,
+            'original_amount' => $originalPrice,
+            'final_amount' => $finalPrice,
+        ]);
+    }
+
         // Send confirmation email to the customer
         try {
             Mail::to($booking->email)->send(new BookingConfirmation($booking));
-            
+
             // Optionally, send a notification to the admin
             // $adminEmail = config('mail.admin_address', 'admin@example.com');
             // Mail::to($adminEmail)->send(new AdminBookingNotification($booking));
-            
+
             // Log email sent
             Log::info('Booking confirmation emails sent', [
-                'booking_id' => $booking->id, 
+                'booking_id' => $booking->id,
                 'customer_email' => $booking->email,
                 // 'admin_email' => $adminEmail
             ]);
@@ -200,7 +254,7 @@ class BookingController extends Controller
                 'error' => $e->getMessage()
             ]);
         }
-        
+
         return response()->json([
             'success' => true,
             'message' => 'Booking created successfully',
@@ -214,14 +268,14 @@ class BookingController extends Controller
             'authorization' => $request->header('Authorization'),
             'content_type' => $request->header('Content-Type')
         ]);
-        
+
         try {
             // Find the booking with related service and therapist data
             $booking = Booking::with(['service', 'therapist'])->findOrFail($id);
-            
+
             // Get the authenticated user using both methods for backup
             $user = User::where('id', $booking->user_id)->first();
-            
+
             // Log authentication details for debugging
             Log::info('Booking access attempt', [
                 'booking_id' => $id,
@@ -229,7 +283,7 @@ class BookingController extends Controller
                 'authenticated_user' => $user ? $user->id : 'None',
                 'therapist_id' => $booking->therapist_id // ADD: Log therapist info
             ]);
-            
+
             // For security, if the booking belongs to a user, only allow that user to see it
             if ($booking->user_id && ($user === null || $user->id != $booking->user_id)) {
                 return response()->json([
@@ -237,7 +291,7 @@ class BookingController extends Controller
                     'message' => 'Unauthorized access to booking'
                 ], 403);
             }
-            
+
             // Get the associated service
             $service = $booking->service;
             if (!$service) {
@@ -246,10 +300,10 @@ class BookingController extends Controller
                     'message' => 'Service associated with this booking not found'
                 ], 404);
             }
-            
+
             // Get the associated therapist (if exists)
             $therapist = $booking->therapist;
-            
+
             // Prepare response data
             $responseData = [
                 'id' => $booking->id,
@@ -274,13 +328,12 @@ class BookingController extends Controller
                 'therapist_id' => $booking->therapist_id,
                 'therapist_name' => $therapist ? $therapist->name : null
             ];
-            
+
             // Return the booking data
             return response()->json([
                 'success' => true,
                 'data' => $responseData
             ]);
-            
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,

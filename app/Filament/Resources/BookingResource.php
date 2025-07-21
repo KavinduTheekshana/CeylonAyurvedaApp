@@ -9,6 +9,7 @@ use App\Models\Service;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -34,18 +35,18 @@ class BookingResource extends Resource
         return $form
             ->schema([
                 Select::make('user_id')
-                ->label('User')
-                ->relationship('user', 'name')
-                ->searchable()
-                ->preload()
-                ->nullable(),
+                    ->label('User')
+                    ->relationship('user', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->nullable(),
 
-            Select::make('service_id')
-                ->label('Service')
-                ->relationship('service', 'title')
-                ->searchable()
-                ->preload()
-                ->required(),
+                Select::make('service_id')
+                    ->label('Service')
+                    ->relationship('service', 'title')
+                    ->searchable()
+                    ->preload()
+                    ->required(),
 
                 DatePicker::make('date')->required(),
                 TimePicker::make('time')->required(),
@@ -73,6 +74,42 @@ class BookingResource extends Resource
                     ])
                     ->default('confirmed')
                     ->required(),
+
+                Section::make('Pricing & Discount')
+                    ->schema([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('original_price')
+                                    ->label('Original Price')
+                                    ->prefix('£')
+                                    ->numeric()
+                                    ->disabled()
+                                    ->dehydrated(false),
+
+                                Forms\Components\TextInput::make('price')
+                                    ->label('Final Price')
+                                    ->prefix('£')
+                                    ->numeric()
+                                    ->required(),
+                            ]),
+
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('coupon_code')
+                                    ->label('Coupon Code')
+                                    ->disabled()
+                                    ->dehydrated(false),
+
+                                Forms\Components\TextInput::make('discount_amount')
+                                    ->label('Discount Amount')
+                                    ->prefix('£')
+                                    ->numeric()
+                                    ->disabled()
+                                    ->dehydrated(false),
+                            ]),
+                    ])
+                    ->visible(fn($record) => $record && $record->coupon_id),
+
             ]);
     }
 
@@ -90,6 +127,18 @@ class BookingResource extends Resource
                 TextColumn::make('status')->sortable()->badge(),
                 TextColumn::make('price')->sortable()->money('GBP'),
                 TextColumn::make('created_at')->label('Booked On')->dateTime(),
+                TextColumn::make('coupon_code')
+                    ->label('Coupon')
+                    ->searchable()
+                    ->placeholder('No coupon')
+                    ->toggleable(),
+
+                TextColumn::make('discount_amount')
+                    ->label('Discount')
+                    ->money('GBP')
+                    ->placeholder('-')
+                    ->color('success')
+                    ->toggleable(),
             ])
             ->filters([
                 SelectFilter::make('status')

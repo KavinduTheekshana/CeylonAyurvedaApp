@@ -25,6 +25,10 @@ class Booking extends Model
         'therapist_id',
         'notes',
         'price',
+        'original_price',
+        'discount_amount',
+        'coupon_id',
+        'coupon_code',
         'reference',
         'status'
     ];
@@ -33,6 +37,8 @@ class Booking extends Model
         'date' => 'date',
         'time' => 'datetime:H:i:s', // Store as HH:MM:SS
         'price' => 'decimal:2',
+        'original_price' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
     ];
 
     public function user()
@@ -81,5 +87,35 @@ class Booking extends Model
     public function therapist()
     {
         return $this->belongsTo(Therapist::class);
+    }
+
+    public function coupon()
+    {
+        return $this->belongsTo(Coupon::class);
+    }
+
+    public function couponUsage()
+    {
+        return $this->hasOne(CouponUsage::class);
+    }
+
+    /**
+     * Get the actual price after discount
+     */
+    public function getFinalPriceAttribute()
+    {
+        return $this->price;
+    }
+
+    /**
+     * Get the discount percentage if applicable
+     */
+    public function getDiscountPercentageAttribute()
+    {
+        if (!$this->original_price || $this->original_price == 0) {
+            return 0;
+        }
+
+        return round((($this->original_price - $this->price) / $this->original_price) * 100, 2);
     }
 }

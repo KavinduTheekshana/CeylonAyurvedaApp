@@ -51,4 +51,17 @@ class Service extends Model
             'therapist_id'       // Foreign key for therapist
         )->withTimestamps();
     }
+
+    public function coupons()
+    {
+        return $this->belongsToMany(Coupon::class, 'coupon_service')->withTimestamps();
+    }
+
+    /**
+     * Get active coupons for this service
+     */
+    public function activeCoupons()
+    {
+        return $this->coupons()->active();
+    }
 }

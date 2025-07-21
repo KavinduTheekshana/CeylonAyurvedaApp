@@ -75,4 +75,25 @@ class User extends Authenticatable
     {
         return $this->investments()->where('status', 'completed')->sum('amount');
     }
+
+    public function couponUsages()
+    {
+        return $this->hasMany(CouponUsage::class);
+    }
+
+    /**
+     * Check if user has used a specific coupon
+     */
+    public function hasUsedCoupon($couponId): bool
+    {
+        return $this->couponUsages()->where('coupon_id', $couponId)->exists();
+    }
+
+    /**
+     * Get count of how many times user has used a specific coupon
+     */
+    public function getCouponUsageCount($couponId): int
+    {
+        return $this->couponUsages()->where('coupon_id', $couponId)->count();
+    }
 }
