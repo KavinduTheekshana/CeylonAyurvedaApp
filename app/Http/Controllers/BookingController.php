@@ -156,7 +156,8 @@ class BookingController extends Controller
         }
 
         // Apply coupon if provided
-        $originalPrice = $service->price;
+        // $originalPrice = $service->price or $service->discount_price;
+        $originalPrice = min($service->price, $service->discount_price);
         $finalPrice = $originalPrice;
         $discountAmount = 0;
         $couponId = null;
@@ -193,7 +194,12 @@ class BookingController extends Controller
         while (Booking::where('reference', $reference)->exists()) {
             $reference = strtoupper(Str::random(8));
         }
-
+        // return response()->json([
+        //     $service->discount_price, "/", $service->price, "original price:" .$originalPrice, 
+        //     "final price:". $finalPrice, 
+        //     "discount amount:". $discountAmount, 
+        //     "coupon id:". $couponId
+        // ], 422);
         // Create the booking with direct address fields
         $booking = new Booking();
         $booking->service_id = $request->service_id;
@@ -211,7 +217,7 @@ class BookingController extends Controller
         $booking->notes = $request->notes;
         $booking->status = 'confirmed'; // Default status based on your schema
         $booking->price = $service->discount_price ?? $service->price;
-         $booking->price = $finalPrice;
+        $booking->price = $finalPrice;
         $booking->original_price = $originalPrice;
         $booking->discount_amount = $discountAmount;
         $booking->coupon_id = $couponId;
@@ -220,18 +226,18 @@ class BookingController extends Controller
         $booking->save();
 
         if ($couponId) {
-        $coupon = Coupon::find($couponId);
-        $coupon->incrementUsage();
+            $coupon = Coupon::find($couponId);
+            $coupon->incrementUsage();
 
-        CouponUsage::create([
-            'coupon_id' => $couponId,
-            'user_id' => $user ? $user->id : null,
-            'booking_id' => $booking->id,
-            'discount_amount' => $discountAmount,
-            'original_amount' => $originalPrice,
-            'final_amount' => $finalPrice,
-        ]);
-    }
+            CouponUsage::create([
+                'coupon_id' => $couponId,
+                'user_id' => $user ? $user->id : null,
+                'booking_id' => $booking->id,
+                'discount_amount' => $discountAmount,
+                'original_amount' => $originalPrice,
+                'final_amount' => $finalPrice,
+            ]);
+        }
 
         // Send confirmation email to the customer
         try {
