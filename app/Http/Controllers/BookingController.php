@@ -50,7 +50,7 @@ class BookingController extends Controller
             'address.city' => 'required_with:address|string|max:100',
             'address.postcode' => 'required_with:address|string|max:20',
             'notes' => 'nullable|string',
-            'save_address' => 'boolean',
+            // 'save_address' => 'boolean',
             'coupon_code' => 'nullable|string',
         ]);
 
