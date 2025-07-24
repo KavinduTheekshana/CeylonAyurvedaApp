@@ -29,7 +29,7 @@ class BookingController extends Controller
             'content_type' => $request->header('Content-Type')
         ]);
 
-        // Validate the booking data - directly accepting address fields or nested object
+        // Validate the booking data - ADD payment_method validation
         $validator = Validator::make($request->all(), [
             'service_id' => 'required|exists:services,id',
             'therapist_id' => 'required|exists:therapists,id',
@@ -50,8 +50,9 @@ class BookingController extends Controller
             'address.city' => 'required_with:address|string|max:100',
             'address.postcode' => 'required_with:address|string|max:20',
             'notes' => 'nullable|string',
-            // 'save_address' => 'boolean',
             'coupon_code' => 'nullable|string',
+            'payment_method' => 'required|in:card,bank_transfer', // ADD THIS LINE
+            'location_id' => 'nullable|exists:locations,id', // ADD THIS IF YOU HAVE LOCATIONS
         ]);
 
         if ($validator->fails()) {
@@ -62,7 +63,7 @@ class BookingController extends Controller
             ], 422);
         }
 
-        // IMPORTANT FIX: Get user if authenticated - use auth()->user() as an alternative
+        // Get user if authenticated
         $user = auth()->user();
 
         // Debug user authentication status
@@ -74,9 +75,7 @@ class BookingController extends Controller
         // If user is not authenticated but token is provided, try to get user from token directly
         if (!$user && $request->bearerToken()) {
             Log::info('Attempting to get user from token directly');
-            // Try to get the user from the token using Sanctum's methods
             try {
-                // For Sanctum
                 $token = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
                 if ($token) {
                     $user = $token->tokenable;
@@ -103,7 +102,6 @@ class BookingController extends Controller
         $postcode = $request->postcode ?? $request->input('address.postcode', '');
 
         // Save address if requested and user is logged in
-        // Fix: Properly check for save_address as a boolean value (could be true, false, 1, 0, "true", "false")
         $saveAddress = filter_var($request->input('save_address', false), FILTER_VALIDATE_BOOLEAN);
 
         Log::info('Save address check', [
@@ -129,7 +127,7 @@ class BookingController extends Controller
                     'address_line2' => $addressLine2,
                     'city' => $city,
                     'postcode' => $postcode,
-                    'is_default' => false // Default to not default
+                    'is_default' => false
                 ];
 
                 // Check if it's the user's first address
@@ -139,25 +137,15 @@ class BookingController extends Controller
                 }
 
                 Log::info('Creating new address', $addressData);
-                // Create the address
                 $address = Address::create($addressData);
-                // Log the address creation for debugging
                 Log::info('Address created', ['address_id' => $address->id, 'user_id' => $user->id]);
             } else {
                 Log::info('Using existing address', ['address_id' => $existingAddress->id]);
             }
-        } else {
-            // Log why the address wasn't saved
-            if (!$user) {
-                Log::info('Address not saved - User not authenticated');
-            } else if (!$saveAddress) {
-                Log::info('Address not saved - save_address flag is false', ['save_address_value' => $request->input('save_address')]);
-            }
         }
 
         // Apply coupon if provided
-        // $originalPrice = $service->price or $service->discount_price;
-        $originalPrice = min($service->price, $service->discount_price);
+        $originalPrice = min($service->price, $service->discount_price ?? $service->price);
         $finalPrice = $originalPrice;
         $discountAmount = 0;
         $couponId = null;
@@ -168,13 +156,15 @@ class BookingController extends Controller
             if ($coupon && $coupon->isValid() && $coupon->isValidForService($service->id)) {
                 if ($user && !$coupon->isValidForUser($user->id)) {
                     return response()->json([
-                        'error' => 'You have already used this coupon the maximum number of times.'
+                        'success' => false,
+                        'message' => 'You have already used this coupon the maximum number of times.'
                     ], 422);
                 }
 
                 if ($coupon->minimum_amount && $originalPrice < $coupon->minimum_amount) {
                     return response()->json([
-                        'error' => "This coupon requires a minimum purchase of £{$coupon->minimum_amount}."
+                        'success' => false,
+                        'message' => "This coupon requires a minimum purchase of £{$coupon->minimum_amount}."
                     ], 422);
                 }
 
@@ -183,24 +173,19 @@ class BookingController extends Controller
                 $couponId = $coupon->id;
             } else {
                 return response()->json([
-                    'error' => 'Invalid or expired coupon code.'
+                    'success' => false,
+                    'message' => 'Invalid or expired coupon code.'
                 ], 422);
             }
         }
 
         // Create a unique reference
         $reference = strtoupper(Str::random(8));
-        // Ensure reference is unique
         while (Booking::where('reference', $reference)->exists()) {
             $reference = strtoupper(Str::random(8));
         }
-        // return response()->json([
-        //     $service->discount_price, "/", $service->price, "original price:" .$originalPrice, 
-        //     "final price:". $finalPrice, 
-        //     "discount amount:". $discountAmount, 
-        //     "coupon id:". $couponId
-        // ], 422);
-        // Create the booking with direct address fields
+
+        // CREATE BOOKING RECORD FIRST
         $booking = new Booking();
         $booking->service_id = $request->service_id;
         $booking->therapist_id = $request->therapist_id;
@@ -215,16 +200,24 @@ class BookingController extends Controller
         $booking->city = $city;
         $booking->postcode = $postcode;
         $booking->notes = $request->notes;
-        $booking->status = 'confirmed'; // Default status based on your schema
-        $booking->price = $service->discount_price ?? $service->price;
         $booking->price = $finalPrice;
         $booking->original_price = $originalPrice;
         $booking->discount_amount = $discountAmount;
         $booking->coupon_id = $couponId;
         $booking->coupon_code = $request->coupon_code ? strtoupper($request->coupon_code) : null;
         $booking->reference = $reference;
+        $booking->location_id = $request->location_id;
+
+        // Set status based on payment method
+        if ($request->payment_method === 'card') {
+            $booking->status = 'pending_payment'; // Will be updated after successful payment
+        } else {
+            $booking->status = 'pending'; // For bank transfer - waiting for admin contact
+        }
+
         $booking->save();
 
+        // Handle coupon usage
         if ($couponId) {
             $coupon = Coupon::find($couponId);
             $coupon->incrementUsage();
@@ -239,33 +232,198 @@ class BookingController extends Controller
             ]);
         }
 
-        // Send confirmation email to the customer
-        try {
-            Mail::to($booking->email)->send(new BookingConfirmation($booking));
+        // HANDLE DIFFERENT PAYMENT METHODS
+        if ($request->payment_method === 'card') {
+            // CREATE STRIPE PAYMENT INTENT FOR CARD PAYMENTS
+            try {
+                // Set your Stripe secret key - use full namespace
+                \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
 
-            // Optionally, send a notification to the admin
-            // $adminEmail = config('mail.admin_address', 'admin@example.com');
-            // Mail::to($adminEmail)->send(new AdminBookingNotification($booking));
+                // Log the stripe key to make sure it's loaded (remove this in production)
+                Log::info('Stripe key loaded', [
+                    'key_exists' => config('services.stripe.secret') ? 'Yes' : 'No',
+                    'key_starts_with' => config('services.stripe.secret') ? substr(config('services.stripe.secret'), 0, 8) : 'No key'
+                ]);
 
-            // Log email sent
-            Log::info('Booking confirmation emails sent', [
-                'booking_id' => $booking->id,
-                'customer_email' => $booking->email,
-                // 'admin_email' => $adminEmail
-            ]);
-        } catch (\Exception $e) {
-            // Log error but don't fail the booking process
-            Log::error('Failed to send booking confirmation email', [
-                'booking_id' => $booking->id,
-                'error' => $e->getMessage()
-            ]);
+                // Create PaymentIntent - use full namespace
+                $paymentIntent = \Stripe\PaymentIntent::create([
+                    'amount' => round($finalPrice * 100), // Stripe uses pence/cents
+                    'currency' => 'gbp',
+                    'metadata' => [
+                        'booking_id' => $booking->id,
+                        'booking_reference' => $booking->reference,
+                        'service_name' => $service->title ?? 'Service',
+                    ],
+                    'automatic_payment_methods' => [
+                        'enabled' => true,
+                    ],
+                ]);
+
+
+
+                // Log the payment intent creation
+                Log::info('Stripe PaymentIntent created successfully', [
+                    'payment_intent_id' => $paymentIntent->id,
+                    'booking_id' => $booking->id,
+                    'amount' => $finalPrice,
+                    'client_secret_exists' => isset($paymentIntent->client_secret) ? 'Yes' : 'No'
+                ]);
+
+                // Store payment intent ID in booking for later reference
+                $booking->stripe_payment_intent_id = $paymentIntent->id;
+                $booking->save();
+                Log::info("XXXXXXX");
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Booking created successfully with payment intent',
+                    'data' => [
+                        'booking' => $booking,
+                        'payment_intent' => [
+                            'client_secret' => $paymentIntent->client_secret,
+                            'payment_intent_id' => $paymentIntent->id
+                        ]
+                    ]
+                ], 201);
+
+            } catch (\Stripe\Exception\ApiErrorException $e) {
+                Log::error('Stripe API Error', [
+                    'error' => $e->getMessage(),
+                    'error_code' => $e->getStripeCode(),
+                    'booking_id' => $booking->id
+                ]);
+
+                // Delete the booking if payment intent creation fails
+                $booking->delete();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Stripe API Error: ' . $e->getMessage()
+                ], 500);
+
+            } catch (\Exception $e) {
+                Log::error('General Stripe Error', [
+                    'error' => $e->getMessage(),
+                    'booking_id' => $booking->id,
+                    'trace' => $e->getTraceAsString()
+                ]);
+
+                // Delete the booking if payment intent creation fails
+                $booking->delete();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to create payment intent: ' . $e->getMessage()
+                ], 500);
+            }
+        } else {
+            // BANK TRANSFER - NO PAYMENT INTENT NEEDED
+            // Send confirmation email to the customer
+            try {
+                Mail::to($booking->email)->send(new BookingConfirmation($booking));
+                Log::info('Booking confirmation email sent', [
+                    'booking_id' => $booking->id,
+                    'customer_email' => $booking->email,
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send booking confirmation email', [
+                    'booking_id' => $booking->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Booking request submitted successfully',
+                'data' => $booking
+            ], 201);
+        }
+    }
+
+    // ADD THIS NEW METHOD FOR CONFIRMING PAYMENTS
+    public function confirmPayment(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'payment_intent_id' => 'required|string'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment intent ID is required',
+                'errors' => $validator->errors()
+            ], 422);
         }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Booking created successfully',
-            'data' => $booking
-        ], 201);
+        try {
+            // Set your Stripe secret key
+            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+            // Stripe::setApiKey(config('services.stripe.secret'));
+
+            // Retrieve the PaymentIntent from Stripe
+            // $paymentIntent = PaymentIntent::retrieve($request->payment_intent_id);
+            $paymentIntent = \Stripe\PaymentIntent::retrieve($request->payment_intent_id);
+
+            Log::info('Payment intent retrieved', [
+                'payment_intent_id' => $paymentIntent->id,
+                'status' => $paymentIntent->status
+            ]);
+
+            if ($paymentIntent->status === 'succeeded') {
+                // Find the booking by payment intent ID
+                $booking = Booking::where('stripe_payment_intent_id', $paymentIntent->id)->first();
+
+                if (!$booking) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Booking not found for this payment'
+                    ], 404);
+                }
+
+                // Update booking status to confirmed
+                $booking->status = 'confirmed';
+                $booking->payment_status = 'paid';
+                $booking->payment_method = 'card';
+                $booking->paid_at = now();
+                $booking->save();
+
+                // Send confirmation email
+                try {
+                    Mail::to($booking->email)->send(new BookingConfirmation($booking));
+                    Log::info('Payment confirmation email sent', [
+                        'booking_id' => $booking->id,
+                        'customer_email' => $booking->email,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Failed to send payment confirmation email', [
+                        'booking_id' => $booking->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Payment confirmed successfully',
+                    'data' => $booking
+                ], 200);
+
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment not completed. Status: ' . $paymentIntent->status
+                ], 400);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Payment confirmation failed', [
+                'payment_intent_id' => $request->payment_intent_id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to confirm payment: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     public function show(Request $request, $id)

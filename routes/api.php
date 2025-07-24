@@ -76,6 +76,7 @@ Route::middleware('auth:sanctum')->group(function () {
 // Bookings
 Route::post('/bookings', [BookingController::class, 'store']);
 Route::get('/bookings/{id}', [BookingController::class, 'show']);
+Route::post('/bookings/confirm-payment', [BookingController::class, 'confirmPayment']);
 
 // User bookings (protected)
 Route::middleware('auth:sanctum')->group(function () {
