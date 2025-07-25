@@ -30,7 +30,11 @@ class Booking extends Model
         'coupon_id',
         'coupon_code',
         'reference',
-        'status'
+        'status',
+        'stripe_payment_intent_id',
+        'payment_status',
+        'payment_method',
+        'paid_at'
     ];
 
     protected $casts = [
