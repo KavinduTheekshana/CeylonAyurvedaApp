@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\BookingCollection;
 use App\Http\Resources\BookingResource;
+use App\Mail\BankTransferBooking;
 use App\Models\Booking;
 use App\Models\Service;
 use App\Models\Address;
@@ -208,11 +209,16 @@ class BookingController extends Controller
         $booking->reference = $reference;
         $booking->location_id = $request->location_id;
 
+
         // Set status based on payment method
         if ($request->payment_method === 'card') {
             $booking->status = 'pending_payment'; // Will be updated after successful payment
-        } else {
+        } else if ($request->payment_method === 'bank_transfer') {
             $booking->status = 'pending'; // For bank transfer - waiting for admin contact
+            $booking->payment_method = 'bank';
+        } else {
+            $booking->status = 'pending';
+            $booking->payment_method = 'cash';
         }
 
         $booking->save();
@@ -272,7 +278,6 @@ class BookingController extends Controller
                 // Store payment intent ID in booking for later reference
                 $booking->stripe_payment_intent_id = $paymentIntent->id;
                 $booking->save();
-                Log::info("XXXXXXX");
                 return response()->json([
                     'success' => true,
                     'message' => 'Booking created successfully with payment intent',
@@ -319,7 +324,7 @@ class BookingController extends Controller
             // BANK TRANSFER - NO PAYMENT INTENT NEEDED
             // Send confirmation email to the customer
             try {
-                Mail::to($booking->email)->send(new BookingConfirmation($booking));
+                Mail::to($booking->email)->send(new BankTransferBooking($booking));
                 Log::info('Booking confirmation email sent', [
                     'booking_id' => $booking->id,
                     'customer_email' => $booking->email,
