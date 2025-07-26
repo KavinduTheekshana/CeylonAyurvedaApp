@@ -74,7 +74,9 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // Bookings
-Route::post('/bookings', [BookingController::class, 'store']);
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/bookings', [BookingController::class, 'store']);
+});
 Route::get('/bookings/{id}', [BookingController::class, 'show']);
 Route::post('/bookings/confirm-payment', [BookingController::class, 'confirmPayment']);
 
@@ -143,14 +145,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Location-specific investment routes
     Route::get('/investments/locations/{locationId}', [InvestmentController::class, 'getLocationInvestmentDetails']);
     Route::get('/investments/locations/{locationId}/investors', [InvestmentController::class, 'getLocationInvestors']);
-   
-     // Investment CRUD
-     Route::post('/investments', [InvestmentController::class, 'createInvestment']);
-     Route::post('/investments/create', [InvestmentController::class, 'createInvestment']);
-     Route::get('/investments', [InvestmentController::class, 'getUserInvestments']);
-     Route::get('/investments/{investmentId}', [InvestmentController::class, 'getInvestmentDetails']);
 
-     // Payment processing
+    // Investment CRUD
+    Route::post('/investments', [InvestmentController::class, 'createInvestment']);
+    Route::post('/investments/create', [InvestmentController::class, 'createInvestment']);
+    Route::get('/investments', [InvestmentController::class, 'getUserInvestments']);
+    Route::get('/investments/{investmentId}', [InvestmentController::class, 'getInvestmentDetails']);
+
+    // Payment processing
     Route::post('/investments/confirm-payment', [InvestmentController::class, 'confirmPayment']);
     Route::post('/investments/{investmentId}/refund', [InvestmentController::class, 'refundInvestment']);
 
@@ -165,10 +167,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
 });
 
 
-Route::post('/coupons/validate', [CouponController::class, 'validateCoupon']);
+// Route::post('/coupons/validate', [CouponController::class, 'validateCoupon']);
 Route::get('/services/{serviceId}/coupons', [CouponController::class, 'getServiceCoupons']);
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/coupons/validate', [CouponController::class, 'validateCoupon']);
     Route::get('/user/coupon-history', [CouponController::class, 'getUserCouponHistory']);
 });
 

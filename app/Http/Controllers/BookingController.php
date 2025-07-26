@@ -154,13 +154,17 @@ class BookingController extends Controller
         Log::info('Coupon code provided', ['coupon_code' => $request->coupon_code]);
 
         if ($request->coupon_code) {
-     Log::info('PPPPPPPP');
+            Log::info('PPPPPPPP');
             $coupon = Coupon::where('code', strtoupper($request->coupon_code))->first();
-     Log::info('QQQQQQ');
+            Log::info('QQQQQQ');
             if ($coupon && $coupon->isValid() && $coupon->isValidForService($service->id)) {
-                     Log::info('RRRRRRR');
+                Log::info('RRRRRRR');
                 if ($user && !$coupon->isValidForUser($user->id)) {
-                         Log::info('SSSSSS');
+                    Log::info('SSSSSSS', [
+                        'coupon_id' => $coupon->id,
+                        'user_id' => $user->id,
+                        'message' => 'User has already used this coupon'
+                    ]);
                     return response()->json([
                         'success' => false,
                         'message' => 'You have already used this coupon the maximum number of times.'
@@ -168,13 +172,13 @@ class BookingController extends Controller
                 }
 
                 if ($coupon->minimum_amount && $originalPrice < $coupon->minimum_amount) {
-                         Log::info('TTTTTTT');
+                    Log::info('TTTTTTT');
                     return response()->json([
                         'success' => false,
                         'message' => "This coupon requires a minimum purchase of £{$coupon->minimum_amount}."
                     ], 422);
                 }
-     Log::info('UUUUUU');
+                Log::info('UUUUUU');
                 $discountAmount = $coupon->calculateDiscount($originalPrice);
                 $finalPrice = max(0, $originalPrice - $discountAmount);
                 $couponId = $coupon->id;
@@ -193,11 +197,12 @@ class BookingController extends Controller
 
         // Create a unique reference
         $reference = strtoupper(Str::random(8));
+        Log::info('Initial booking reference', ['reference' => $reference]);
         while (Booking::where('reference', $reference)->exists()) {
             $reference = strtoupper(Str::random(8));
         }
 
-             Log::info('qqqqqqqqqqqqq',$reference);
+        Log::info('qqqqqqqqqqqqq');
         // CREATE BOOKING RECORD FIRST
         $booking = new Booking();
         $booking->service_id = $request->service_id;

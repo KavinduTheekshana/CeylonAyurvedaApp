@@ -8,80 +8,108 @@ use App\Models\Coupon;
 use App\Models\Service;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class CouponController extends Controller
 {
     /**
      * Validate a coupon code for a specific service
      */
-    public function validateCoupon(Request $request)
-    {
-        $request->validate([
-            'code' => 'required|string',
-            'service_id' => 'required|exists:services,id',
-            'amount' => 'required|numeric|min:0',
-        ]);
+   public function validateCoupon(Request $request)
+{
+    $request->validate([
+        'code' => 'required|string',
+        'service_id' => 'required|exists:services,id',
+        'amount' => 'required|numeric|min:0',
+    ]);
 
-        $coupon = Coupon::where('code', strtoupper($request->code))->first();
+    $coupon = Coupon::where('code', strtoupper($request->code))->first();
 
-        if (!$coupon) {
-            return response()->json([
-                'valid' => false,
-                'message' => 'Invalid coupon code.',
-            ], 422);
-        }
-
-        // Check if coupon is valid
-        if (!$coupon->isValid()) {
-            return response()->json([
-                'valid' => false,
-                'message' => $coupon->getValidationMessage(),
-            ], 422);
-        }
-
-        // Check if coupon is valid for the user (if authenticated)
-        if (Auth::check() && !$coupon->isValidForUser(Auth::id())) {
-            return response()->json([
-                'valid' => false,
-                'message' => 'You have already used this coupon the maximum number of times.',
-            ], 422);
-        }
-
-        // Check if coupon is valid for the service
-        if (!$coupon->isValidForService($request->service_id)) {
-            return response()->json([
-                'valid' => false,
-                'message' => 'This coupon is not valid for the selected service.',
-            ], 422);
-        }
-
-        // Check minimum amount requirement
-        if ($coupon->minimum_amount && $request->amount < $coupon->minimum_amount) {
-            return response()->json([
-                'valid' => false,
-                'message' => "This coupon requires a minimum purchase of £{$coupon->minimum_amount}.",
-            ], 422);
-        }
-
-        // Calculate discount
-        $discount = $coupon->calculateDiscount($request->amount);
-        $finalAmount = max(0, $request->amount - $discount);
-
+    // Check if coupon exists FIRST
+    if (!$coupon) {
         return response()->json([
-            'valid' => true,
-            'coupon' => [
-                'id' => $coupon->id,
-                'code' => $coupon->code,
-                'type' => $coupon->type,
-                'value' => $coupon->value,
-                'description' => $coupon->description,
-            ],
-            'discount_amount' => $discount,
-            'original_amount' => $request->amount,
-            'final_amount' => $finalAmount,
-            'savings_percentage' => $request->amount > 0 ? round(($discount / $request->amount) * 100, 2) : 0,
-        ]);
+            'valid' => false,
+            'message' => 'Invalid coupon code.',
+        ], 422);
     }
+
+    // Debug: Log coupon details
+    \Log::info('Coupon found:', ['coupon_id' => $coupon->id, 'code' => $coupon->code]);
+
+    // Check if coupon is valid
+    if (!$coupon->isValid()) {
+        \Log::info('Coupon is not valid');
+        return response()->json([
+            'valid' => false,
+            'message' => $coupon->getValidationMessage(),
+        ], 422);
+    }
+
+    // Require authentication for coupon validation
+    if (!Auth::check()) {
+        \Log::info('User is not authenticated - requiring login');
+        return response()->json([
+            'valid' => false,
+            'message' => 'You must be logged in to use coupons.',
+        ], 401);
+    }
+
+    // Check if coupon is valid for the user
+    $userId = Auth::id();
+    $isValidForUser = $coupon->isValidForUser($userId);
+    
+    \Log::info('User validation check:', [
+        'user_id' => $userId,
+        'is_valid_for_user' => $isValidForUser
+    ]);
+
+    if (!$isValidForUser) {
+        \Log::info('Returning: User has already used coupon maximum times');
+        return response()->json([
+            'valid' => false,
+            'message' => 'You have already used this coupon the maximum number of times.',
+        ], 422);
+    }
+
+    // Check if coupon is valid for the service
+    if (!$coupon->isValidForService($request->service_id)) {
+        \Log::info('Coupon not valid for service');
+        return response()->json([
+            'valid' => false,
+            'message' => 'This coupon is not valid for the selected service.',
+        ], 422);
+    }
+
+    // Check minimum amount requirement
+    if ($coupon->minimum_amount && $request->amount < $coupon->minimum_amount) {
+        \Log::info('Minimum amount not met');
+        return response()->json([
+            'valid' => false,
+            'message' => "This coupon requires a minimum purchase of £{$coupon->minimum_amount}.",
+        ], 422);
+    }
+
+    // Calculate discount
+    $discount = $coupon->calculateDiscount($request->amount);
+    $finalAmount = max(0, $request->amount - $discount);
+
+    \Log::info('Coupon validation successful');
+
+    return response()->json([
+        'valid' => true,
+        'coupon' => [
+            'id' => $coupon->id,
+            'code' => $coupon->code,
+            'type' => $coupon->type,
+            'value' => $coupon->value,
+            'description' => $coupon->description,
+        ],
+        'discount_amount' => $discount,
+        'original_amount' => $request->amount,
+        'final_amount' => $finalAmount,
+        'savings_percentage' => $request->amount > 0 ? round(($discount / $request->amount) * 100, 2) : 0,
+    ]);
+}
 
     /**
      * Get active coupons for a service
@@ -107,8 +135,8 @@ class CouponController extends Controller
                     'type' => $coupon->type,
                     'value' => $coupon->value,
                     'minimum_amount' => $coupon->minimum_amount,
-                    'display_value' => $coupon->type === 'percentage' 
-                        ? "{$coupon->value}% OFF" 
+                    'display_value' => $coupon->type === 'percentage'
+                        ? "{$coupon->value}% OFF"
                         : "£{$coupon->value} OFF",
                 ];
             });
