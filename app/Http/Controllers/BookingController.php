@@ -151,7 +151,10 @@ class BookingController extends Controller
         $discountAmount = 0;
         $couponId = null;
 
+        Log::info('Coupon code provided', ['coupon_code' => $request->coupon_code]);
+
         if ($request->coupon_code) {
+            Log::info('XXXX');
             $coupon = Coupon::where('code', strtoupper($request->coupon_code))->first();
 
             if ($coupon && $coupon->isValid() && $coupon->isValidForService($service->id)) {
@@ -352,7 +355,7 @@ class BookingController extends Controller
         } else {
             // BANK TRANSFER - NO PAYMENT INTENT NEEDED
             // Send confirmation email to the customer
-               Log::info('DDDDDDDDD');
+            Log::info('DDDDDDDDD');
             try {
                 Mail::to($booking->email)->send(new BankTransferBooking($booking));
                 Log::info('Booking confirmation email sent', [
