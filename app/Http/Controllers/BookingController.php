@@ -210,6 +210,28 @@ class BookingController extends Controller
         $booking->location_id = $request->location_id;
 
 
+        Log::info('AAAAAAAAAA', [
+            'service_id' => $booking->service_id,
+            'therapist_id' => $booking->therapist_id,
+            'user_id' => $booking->user_id,
+            'date' => $booking->date,
+            'time' => $booking->time,
+            'name' => $booking->name,
+            'email' => $booking->email,
+            'phone' => $booking->phone,
+            'address_line1' => $booking->address_line1,
+            'address_line2' => $booking->address_line2,
+            'city' => $booking->city,
+            'postcode' => $booking->postcode,
+            'notes' => $booking->notes,
+            'price' => $booking->price,
+            'original_price' => $booking->original_price,
+            'discount_amount' => $booking->discount_amount,
+            'coupon_id' => $booking->coupon_id,
+            'coupon_code' => $booking->coupon_code,
+            'reference' => $booking->reference,
+            'location_id' => $booking->location_id
+        ]);
         // Set status based on payment method
         if ($request->payment_method === 'card') {
             $booking->status = 'pending_payment'; // Will be updated after successful payment
@@ -242,9 +264,18 @@ class BookingController extends Controller
         if ($request->payment_method === 'card') {
             // CREATE STRIPE PAYMENT INTENT FOR CARD PAYMENTS
             try {
+                // Log the booking details before payment intent creation
+                Log::info('BBBBBBBBBBBBB', [
+                    'booking_id' => $booking->id,
+                    'amount' => $finalPrice,
+                    'currency' => 'gbp',
+                    'service_name' => $service->title ?? 'Service',
+                    'user_id' => $booking->user_id,
+                    'payment_method' => $request->payment_method
+                ]);
                 // Set your Stripe secret key - use full namespace
                 \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
-
+                Log::info('CCCCCCCCCCC');
                 // Log the stripe key to make sure it's loaded (remove this in production)
                 Log::info('Stripe key loaded', [
                     'key_exists' => config('services.stripe.secret') ? 'Yes' : 'No',
@@ -289,7 +320,6 @@ class BookingController extends Controller
                         ]
                     ]
                 ], 201);
-
             } catch (\Stripe\Exception\ApiErrorException $e) {
                 Log::error('Stripe API Error', [
                     'error' => $e->getMessage(),
@@ -304,7 +334,6 @@ class BookingController extends Controller
                     'success' => false,
                     'message' => 'Stripe API Error: ' . $e->getMessage()
                 ], 500);
-
             } catch (\Exception $e) {
                 Log::error('General Stripe Error', [
                     'error' => $e->getMessage(),
@@ -323,6 +352,7 @@ class BookingController extends Controller
         } else {
             // BANK TRANSFER - NO PAYMENT INTENT NEEDED
             // Send confirmation email to the customer
+               Log::info('DDDDDDDDD');
             try {
                 Mail::to($booking->email)->send(new BankTransferBooking($booking));
                 Log::info('Booking confirmation email sent', [
@@ -410,14 +440,12 @@ class BookingController extends Controller
                     'message' => 'Payment confirmed successfully',
                     'data' => $booking
                 ], 200);
-
             } else {
                 return response()->json([
                     'success' => false,
                     'message' => 'Payment not completed. Status: ' . $paymentIntent->status
                 ], 400);
             }
-
         } catch (\Exception $e) {
             Log::error('Payment confirmation failed', [
                 'payment_intent_id' => $request->payment_intent_id,
