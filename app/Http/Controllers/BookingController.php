@@ -154,11 +154,13 @@ class BookingController extends Controller
         Log::info('Coupon code provided', ['coupon_code' => $request->coupon_code]);
 
         if ($request->coupon_code) {
-
+     Log::info('PPPPPPPP');
             $coupon = Coupon::where('code', strtoupper($request->coupon_code))->first();
-
+     Log::info('QQQQQQ');
             if ($coupon && $coupon->isValid() && $coupon->isValidForService($service->id)) {
+                     Log::info('RRRRRRR');
                 if ($user && !$coupon->isValidForUser($user->id)) {
+                         Log::info('SSSSSS');
                     return response()->json([
                         'success' => false,
                         'message' => 'You have already used this coupon the maximum number of times.'
@@ -166,15 +168,21 @@ class BookingController extends Controller
                 }
 
                 if ($coupon->minimum_amount && $originalPrice < $coupon->minimum_amount) {
+                         Log::info('TTTTTTT');
                     return response()->json([
                         'success' => false,
                         'message' => "This coupon requires a minimum purchase of £{$coupon->minimum_amount}."
                     ], 422);
                 }
-
+     Log::info('UUUUUU');
                 $discountAmount = $coupon->calculateDiscount($originalPrice);
                 $finalPrice = max(0, $originalPrice - $discountAmount);
                 $couponId = $coupon->id;
+                Log::info('Coupon VVVVVVVVVV', [
+                    'coupon_id' => $couponId,
+                    'discount_amount' => $discountAmount,
+                    'final_price' => $finalPrice
+                ]);
             } else {
                 return response()->json([
                     'success' => false,
