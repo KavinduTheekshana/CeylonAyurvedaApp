@@ -154,7 +154,7 @@ class BookingController extends Controller
         Log::info('Coupon code provided', ['coupon_code' => $request->coupon_code]);
 
         if ($request->coupon_code) {
-            Log::info('XXXX');
+
             $coupon = Coupon::where('code', strtoupper($request->coupon_code))->first();
 
             if ($coupon && $coupon->isValid() && $coupon->isValidForService($service->id)) {
@@ -189,6 +189,7 @@ class BookingController extends Controller
             $reference = strtoupper(Str::random(8));
         }
 
+             Log::info('qqqqqqqqqqqqq',$reference);
         // CREATE BOOKING RECORD FIRST
         $booking = new Booking();
         $booking->service_id = $request->service_id;
