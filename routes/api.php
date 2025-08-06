@@ -235,8 +235,15 @@ Route::prefix('therapist')->group(function () {
         Route::get('services', function (Request $request) {
             $therapist = $request->user();
             $services = $therapist->services()
-                ->where('status', true)
-                ->get(['id', 'title', 'price', 'duration', 'description', 'benefits']);
+            ->where('status', true)
+            ->get([
+                'services.id',          // specify table name
+                'services.title',
+                'services.price',
+                'services.duration',
+                'services.description',
+                'services.benefits'
+            ]);
                 
             return response()->json([
                 'success' => true,
