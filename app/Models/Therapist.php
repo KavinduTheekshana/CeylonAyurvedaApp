@@ -176,11 +176,11 @@ class Therapist extends Authenticatable implements FilamentUser
         if ($this->profile_photo_path) {
             return asset('storage/' . $this->profile_photo_path);
         }
-        
+
         if ($this->image) {
             return asset('storage/' . $this->image);
         }
-        
+
         return 'https://ui-avatars.com/api/?name=' . urlencode($this->name) . '&color=7F9CF5&background=EBF4FF';
     }
 
@@ -213,5 +213,43 @@ class Therapist extends Authenticatable implements FilamentUser
             ->whereIn('status', ['confirmed', 'pending'])
             ->orderBy('date')
             ->orderBy('time');
+    }
+
+
+    // Add this relationship method to your existing app/Models/Therapist.php file
+
+    /**
+     * Get the holiday requests for this therapist.
+     */
+    public function holidayRequests(): HasMany
+    {
+        return $this->hasMany(TherapistHolidayRequest::class);
+    }
+
+    /**
+     * Get pending holiday requests
+     */
+    public function pendingHolidayRequests(): HasMany
+    {
+        return $this->hasMany(TherapistHolidayRequest::class)->where('status', 'pending');
+    }
+
+    /**
+     * Get approved holidays
+     */
+    public function approvedHolidays(): HasMany
+    {
+        return $this->hasMany(TherapistHolidayRequest::class)->where('status', 'approved');
+    }
+
+    /**
+     * Check if therapist has holiday on specific date
+     */
+    public function hasHolidayOn($date): bool
+    {
+        return $this->holidayRequests()
+            ->where('date', $date)
+            ->where('status', 'approved')
+            ->exists();
     }
 }

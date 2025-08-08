@@ -201,6 +201,13 @@ Route::prefix('therapist')->group(function () {
         Route::post('profile/update', [TherapistAuthController::class, 'updateProfile']);
         Route::post('password/update', [TherapistAuthController::class, 'updatePassword']);
         Route::post('logout', [TherapistAuthController::class, 'logout']);
+
+        // 🎯 ADD HOLIDAY ROUTES HERE:
+        Route::get('holiday-requests', [App\Http\Controllers\Api\TherapistHolidayController::class, 'index']);
+        Route::get('holiday-requests/calendar', [App\Http\Controllers\Api\TherapistHolidayController::class, 'getCalendarHolidays']);
+        Route::post('holiday-requests', [App\Http\Controllers\Api\TherapistHolidayController::class, 'store']);
+        Route::get('holiday-requests/{id}', [App\Http\Controllers\Api\TherapistHolidayController::class, 'show']);
+        Route::delete('holiday-requests/{id}', [App\Http\Controllers\Api\TherapistHolidayController::class, 'destroy']);
         
         // Dashboard
         Route::get('dashboard', [TherapistAuthController::class, 'dashboard']);
