@@ -18,6 +18,64 @@ use Illuminate\Support\Facades\Log;
 
 class TherapistAuthController extends Controller
 {
+
+    /**
+     * Change therapist password
+     */
+    public function changePassword(Request $request)
+    {
+        $therapist = $request->user();
+
+        if (!$therapist) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'current_password' => 'required',
+            'new_password' => 'required|string|min:8|confirmed',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Check if the current password is correct
+        if (!Hash::check($request->current_password, $therapist->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Current password is incorrect',
+                'errors' => [
+                    'current_password' => ['The provided password does not match our records.']
+                ]
+            ], 401);
+        }
+
+        try {
+            // Update the password
+            $therapist->password = Hash::make($request->new_password);
+            $therapist->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Password changed successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error changing therapist password: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to change password',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
     /**
      * Register a new therapist (usually done by admin, but included for completeness)
      */
@@ -195,7 +253,7 @@ class TherapistAuthController extends Controller
     {
         try {
             $therapist = $request->user();
-            
+
             if (!$therapist) {
                 return response()->json([
                     'success' => false,
@@ -205,7 +263,7 @@ class TherapistAuthController extends Controller
 
             // Load relationships
             $therapist->load([
-                'services:id,title,price,duration', 
+                'services:id,title,price,duration',
                 'availabilities',
                 'locations:id,name,city'
             ]);
@@ -271,6 +329,7 @@ class TherapistAuthController extends Controller
 
         $validator = Validator::make($request->all(), [
             'name' => ['required', 'string', 'max:255'],
+
             'phone' => ['required', 'string', 'max:20'],
             'bio' => ['nullable', 'string', 'max:1000'],
             'profile_photo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif', 'max:2048'],
@@ -287,10 +346,11 @@ class TherapistAuthController extends Controller
         try {
             // Update basic info
             $therapist->name = $request->name;
+       
             $therapist->phone = $request->phone;
             $therapist->bio = $request->bio;
 
-            // Handle profile photo upload
+            // Handle profile photo upload if provided
             if ($request->hasFile('profile_photo')) {
                 // Delete old photo if exists
                 if ($therapist->image) {
@@ -307,6 +367,13 @@ class TherapistAuthController extends Controller
 
             $therapist->save();
 
+            // Load relationships for response
+            $therapist->load([
+                'services:id,title,price,duration',
+                'availabilities',
+                'locations:id,name,city'
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Profile updated successfully',
@@ -318,6 +385,13 @@ class TherapistAuthController extends Controller
                         'phone' => $therapist->phone,
                         'bio' => $therapist->bio,
                         'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,
+                        'work_start_date' => $therapist->work_start_date,
+                        'status' => $therapist->status,
+                        'email_verified_at' => $therapist->email_verified_at,
+                        'last_login_at' => $therapist->last_login_at,
+                        'services' => $therapist->services,
+                        'availabilities' => $therapist->availabilities,
+                        'locations' => $therapist->locations,
                     ]
                 ]
             ]);
@@ -567,7 +641,7 @@ class TherapistAuthController extends Controller
     {
         try {
             $therapist = $request->user();
-            
+
             if ($therapist) {
                 // Revoke the current token
                 $request->user()->currentAccessToken()->delete();
@@ -595,7 +669,7 @@ class TherapistAuthController extends Controller
     {
         try {
             $therapist = $request->user();
-            
+
             if (!$therapist) {
                 return response()->json([
                     'success' => false,

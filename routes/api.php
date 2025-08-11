@@ -183,19 +183,24 @@ Route::post('/webhooks/stripe', [WebhookController::class, 'handleStripe']);
 
 
 Route::prefix('therapist')->group(function () {
-    
+
     // Public Authentication Routes
     Route::post('login', [TherapistAuthController::class, 'login']);
     Route::post('register', [TherapistAuthController::class, 'register']);
-    
+
     // Password Reset Routes  
     Route::post('forgot-password', [TherapistAuthController::class, 'forgotPassword']);
     Route::post('verify-reset-code', [TherapistAuthController::class, 'verifyResetCode']);
     Route::post('reset-password', [TherapistAuthController::class, 'resetPassword']);
-    
+
+
     // Protected Routes (Require Authentication)
     Route::middleware('auth:sanctum')->group(function () {
-        
+
+        Route::post('change-password', [TherapistAuthController::class, 'changePassword']);
+        // In the therapist protected routes section
+        Route::post('profile', [TherapistAuthController::class, 'updateProfile']);
+
         // Profile & Authentication
         Route::get('profile', [TherapistAuthController::class, 'profile']);
         Route::post('profile/update', [TherapistAuthController::class, 'updateProfile']);
@@ -208,56 +213,56 @@ Route::prefix('therapist')->group(function () {
         Route::post('holiday-requests', [App\Http\Controllers\Api\TherapistHolidayController::class, 'store']);
         Route::get('holiday-requests/{id}', [App\Http\Controllers\Api\TherapistHolidayController::class, 'show']);
         Route::delete('holiday-requests/{id}', [App\Http\Controllers\Api\TherapistHolidayController::class, 'destroy']);
-        
+
         // Dashboard
         Route::get('dashboard', [TherapistAuthController::class, 'dashboard']);
-        
+
         // ==============================================
         // BOOKING MANAGEMENT ROUTES
         // ==============================================
-        
+
         // Get all bookings with optional filtering
         Route::get('bookings', [TherapistBookingController::class, 'getBookings']);
-        
+
         // Get today's bookings
         Route::get('bookings/today', [TherapistBookingController::class, 'getTodayBookings']);
-        
+
         // Get specific booking details
         Route::get('bookings/{bookingId}', [TherapistBookingController::class, 'getBookingDetails']);
-        
+
         // Update booking status
         Route::post('bookings/{bookingId}/status', [TherapistBookingController::class, 'updateBookingStatus']);
-        
+
         // Get booking statistics
         Route::get('bookings/stats', [TherapistBookingController::class, 'getBookingStats']);
-        
+
         // Get schedule for date range
         Route::get('schedule', [TherapistBookingController::class, 'getSchedule']);
-        
+
         // ==============================================
         // SERVICES & AVAILABILITY ROUTES
         // ==============================================
-        
+
         // Get therapist's services
         Route::get('services', function (Request $request) {
             $therapist = $request->user();
             $services = $therapist->services()
-            ->where('status', true)
-            ->get([
-                'services.id',          // specify table name
-                'services.title',
-                'services.price',
-                'services.duration',
-                'services.description',
-                'services.benefits'
-            ]);
-                
+                ->where('status', true)
+                ->get([
+                    'services.id',          // specify table name
+                    'services.title',
+                    'services.price',
+                    'services.duration',
+                    'services.description',
+                    'services.benefits'
+                ]);
+
             return response()->json([
                 'success' => true,
                 'data' => $services
             ]);
         });
-        
+
         // Get therapist's availability
         Route::get('availability', function (Request $request) {
             $therapist = $request->user();
@@ -275,35 +280,35 @@ Route::prefix('therapist')->group(function () {
                         'is_active' => $availability->is_active,
                     ];
                 });
-                
+
             return response()->json([
                 'success' => true,
                 'data' => $availabilities
             ]);
         });
-        
+
         // Get therapist locations
         Route::get('locations', function (Request $request) {
             $therapist = $request->user();
             $locations = $therapist->locations()
                 ->where('status', true)
                 ->get(['id', 'name', 'city', 'address', 'phone', 'email']);
-                
+
             return response()->json([
                 'success' => true,
                 'data' => $locations
             ]);
         });
-        
+
         // ==============================================
         // QUICK ACCESS ROUTES
         // ==============================================
-        
+
         // Get upcoming bookings (next 7 days)
         Route::get('bookings/upcoming', function (Request $request) {
             $therapist = $request->user();
             $limit = $request->query('limit', 10);
-            
+
             $bookings = $therapist->bookings()
                 ->where('date', '>', Carbon::today())
                 ->where('date', '<=', Carbon::today()->addDays(7))
@@ -324,17 +329,17 @@ Route::prefix('therapist')->group(function () {
                         'reference' => $booking->reference,
                     ];
                 });
-                
+
             return response()->json([
                 'success' => true,
                 'data' => $bookings
             ]);
         });
-        
+
         // Get bookings for specific date
         Route::get('bookings/date/{date}', function (Request $request, $date) {
             $therapist = $request->user();
-            
+
             try {
                 $bookingDate = Carbon::createFromFormat('Y-m-d', $date);
             } catch (\Exception $e) {
@@ -343,7 +348,7 @@ Route::prefix('therapist')->group(function () {
                     'message' => 'Invalid date format. Use YYYY-MM-DD'
                 ], 400);
             }
-            
+
             $bookings = $therapist->bookings()
                 ->whereDate('date', $bookingDate)
                 ->whereIn('status', ['confirmed', 'pending', 'completed'])
@@ -363,7 +368,7 @@ Route::prefix('therapist')->group(function () {
                         'notes' => $booking->notes,
                     ];
                 });
-                
+
             return response()->json([
                 'success' => true,
                 'data' => $bookings,
@@ -373,11 +378,11 @@ Route::prefix('therapist')->group(function () {
                 ]
             ]);
         });
-        
+
         // Get monthly booking overview
         Route::get('bookings/monthly/{year}/{month}', function (Request $request, $year, $month) {
             $therapist = $request->user();
-            
+
             try {
                 $startDate = Carbon::createFromDate($year, $month, 1)->startOfMonth();
                 $endDate = Carbon::createFromDate($year, $month, 1)->endOfMonth();
@@ -387,7 +392,7 @@ Route::prefix('therapist')->group(function () {
                     'message' => 'Invalid year or month'
                 ], 400);
             }
-            
+
             $bookings = $therapist->bookings()
                 ->whereBetween('date', [$startDate, $endDate])
                 ->whereIn('status', ['confirmed', 'pending', 'completed'])
@@ -395,10 +400,10 @@ Route::prefix('therapist')->group(function () {
                 ->groupBy('booking_date')
                 ->get()
                 ->keyBy('booking_date');
-            
+
             $monthlyData = [];
             $currentDate = $startDate->copy();
-            
+
             while ($currentDate->lte($endDate)) {
                 $dateStr = $currentDate->toDateString();
                 $monthlyData[] = [
@@ -409,7 +414,7 @@ Route::prefix('therapist')->group(function () {
                 ];
                 $currentDate->addDay();
             }
-            
+
             return response()->json([
                 'success' => true,
                 'data' => $monthlyData,
