@@ -104,7 +104,7 @@ class TherapistBookingController extends Controller
 
             $bookings = $therapist->bookings()
                 ->whereDate('date', $today)
-                ->whereIn('status', ['confirmed'])
+                ->whereIn('status', ['confirmed', 'completed'])
                 ->with(['service:id,title,duration'])
                 ->orderBy('time')
                 ->get()
@@ -115,6 +115,8 @@ class TherapistBookingController extends Controller
                         'time' => $booking->time,
                         'status' => $booking->status,
                         'customer_name' => $booking->name,
+                        'address' => trim("{$booking->address_line1} {$booking->address_line2} {$booking->city} {$booking->postcode}"),
+                        'postcode' => $booking->postcode,
                         'customer_phone' => $booking->phone,
                         'service' => [
                             'title' => $booking->service->title,
@@ -244,8 +246,10 @@ class TherapistBookingController extends Controller
             $currentStatus = $booking->status;
             $newStatus = $request->status;
 
-            if (!isset($allowedTransitions[$currentStatus]) || 
-                !in_array($newStatus, $allowedTransitions[$currentStatus])) {
+            if (
+                !isset($allowedTransitions[$currentStatus]) ||
+                !in_array($newStatus, $allowedTransitions[$currentStatus])
+            ) {
                 return response()->json([
                     'success' => false,
                     'message' => "Cannot change status from {$currentStatus} to {$newStatus}"
@@ -378,11 +382,11 @@ class TherapistBookingController extends Controller
             // Build schedule
             $schedule = [];
             $currentDate = Carbon::parse($startDate);
-            
+
             while ($currentDate->lte(Carbon::parse($endDate))) {
                 $dayOfWeek = strtolower($currentDate->format('l'));
                 $dateStr = $currentDate->toDateString();
-                
+
                 $daySchedule = [
                     'date' => $dateStr,
                     'day_of_week' => $dayOfWeek,
@@ -393,7 +397,7 @@ class TherapistBookingController extends Controller
                     ] : null,
                     'bookings' => $bookings->get($dateStr, collect())->toArray(),
                 ];
-                
+
                 $schedule[] = $daySchedule;
                 $currentDate->addDay();
             }

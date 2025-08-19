@@ -25,6 +25,7 @@ class Therapist extends Authenticatable implements FilamentUser
         'bio',
         'work_start_date',
         'status',
+        'online_status',
         'email_verified_at',
         'profile_photo_path',
         'last_login_at',

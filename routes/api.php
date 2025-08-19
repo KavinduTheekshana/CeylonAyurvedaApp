@@ -216,6 +216,7 @@ Route::prefix('therapist')->group(function () {
 
         // Dashboard
         Route::get('dashboard', [TherapistAuthController::class, 'dashboard']);
+        Route::post('online-status', [TherapistController::class, 'updateOnlineStatus']);
 
         // ==============================================
         // BOOKING MANAGEMENT ROUTES
