@@ -104,7 +104,7 @@ class TherapistBookingController extends Controller
 
             $bookings = $therapist->bookings()
                 ->whereDate('date', $today)
-                ->whereIn('status', ['confirmed', 'pending', 'completed'])
+                ->whereIn('status', ['confirmed'])
                 ->with(['service:id,title,duration'])
                 ->orderBy('time')
                 ->get()

@@ -117,7 +117,7 @@ class BookingResource extends Resource
                                 TextInput::make('postcode')
                                     ->required()
                                     ->placeholder('Postcode')
-                                    ->rules(['regex:/^[A-Z]{1,2}[0-9][A-Z0-9]? [0-9][ABD-HJLNP-UW-Z]{2}$/i']),
+                                    // ->rules(['regex:/^[A-Z]{1,2}[0-9][A-Z0-9]? [0-9][ABD-HJLNP-UW-Z]{2}$/i']),
                             ]),
                     ]),
 
@@ -164,7 +164,7 @@ class BookingResource extends Resource
                                     ->required()
                                     ->native(false)
                                     ->displayFormat('d/m/Y')
-                                    ->minDate(now())
+                                    // ->minDate(now())
                                     ->helperText('Select appointment date'),
                                 
                                 TimePicker::make('time')
