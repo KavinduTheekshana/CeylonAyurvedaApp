@@ -20,6 +20,9 @@ return new class extends Migration
             $table->date('work_start_date')->nullable();
             $table->boolean('status')->default(true);
             $table->boolean('online_status')->default(false);
+            $table->enum('subscription_status', ['active', 'inactive', 'trial', 'past_due'])->default('inactive');
+            $table->timestamp('subscription_ends_at')->nullable();
+            $table->boolean('can_accept_bookings')->default(false);
             $table->string('password');
             $table->timestamp('email_verified_at')->nullable();
             $table->rememberToken();

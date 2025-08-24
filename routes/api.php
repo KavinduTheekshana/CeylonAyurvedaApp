@@ -197,6 +197,19 @@ Route::prefix('therapist')->group(function () {
     // Protected Routes (Require Authentication)
     Route::middleware('auth:sanctum')->group(function () {
 
+
+        Route::prefix('subscription')->group(function () {
+            Route::get('status', [App\Http\Controllers\Api\TherapistSubscriptionController::class, 'getSubscriptionStatus']);
+            Route::post('setup-intent', [App\Http\Controllers\Api\TherapistSubscriptionController::class, 'createSetupIntent']);
+            Route::post('create', [App\Http\Controllers\Api\TherapistSubscriptionController::class, 'createSubscription']);
+            Route::post('cancel', [App\Http\Controllers\Api\TherapistSubscriptionController::class, 'cancelSubscription']);
+            Route::post('reactivate', [App\Http\Controllers\Api\TherapistSubscriptionController::class, 'reactivateSubscription']);
+            Route::get('payments', [App\Http\Controllers\Api\TherapistSubscriptionController::class, 'getPaymentHistory']);
+        });
+
+
+
+
         Route::post('change-password', [TherapistAuthController::class, 'changePassword']);
         // In the therapist protected routes section
         Route::post('profile', [TherapistAuthController::class, 'updateProfile']);
@@ -429,4 +442,8 @@ Route::prefix('therapist')->group(function () {
         });
     });
 });
+
+
+
+
 
