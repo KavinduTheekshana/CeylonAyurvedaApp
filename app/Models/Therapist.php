@@ -19,16 +19,31 @@ class Therapist extends Authenticatable implements FilamentUser
     protected $fillable = [
         'name',
         'email',
-        'password',
         'phone',
         'image',
         'bio',
         'work_start_date',
         'status',
         'online_status',
+        'password',
         'email_verified_at',
         'profile_photo_path',
         'last_login_at',
+
+        // Service User Preferences
+        'preferred_gender',
+        'age_range_start',
+        'age_range_end',
+        'preferred_language',
+
+        // Service Delivery Preferences
+        'accept_new_patients',
+        'home_visits_only',
+        'clinic_visits_only',
+        'max_travel_distance',
+        'weekends_available',
+        'evenings_available',
+        'preferences_updated_at',
     ];
 
     protected $hidden = [
@@ -36,16 +51,25 @@ class Therapist extends Authenticatable implements FilamentUser
         'remember_token',
     ];
 
-    protected $casts = [
-        'status' => 'boolean',
-        'work_start_date' => 'date',
-        'email_verified_at' => 'datetime',
-        'last_login_at' => 'datetime',
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
-        'password' => 'hashed',
-    ];
-
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'last_login_at' => 'datetime',
+            'preferences_updated_at' => 'datetime',
+            'work_start_date' => 'date',
+            'status' => 'boolean',
+            'online_status' => 'boolean',
+            'accept_new_patients' => 'boolean',
+            'home_visits_only' => 'boolean',
+            'clinic_visits_only' => 'boolean',
+            'weekends_available' => 'boolean',
+            'evenings_available' => 'boolean',
+            'age_range_start' => 'integer',
+            'age_range_end' => 'integer',
+            'max_travel_distance' => 'integer',
+        ];
+    }
     /**
      * Determine if the user can access the given Filament panel.
      */
@@ -117,6 +141,82 @@ class Therapist extends Authenticatable implements FilamentUser
             ->where('end_time', '>', $time)
             ->exists();
     }
+
+    public function getAvailabilityCountAttribute()
+    {
+        return $this->availabilities()->where('is_active', true)->count();
+    }
+
+    /**
+     * Scope to filter by preferences
+     */
+    public function scopeWithPreferences($query)
+    {
+        return $query->select([
+            '*',
+            'preferred_gender',
+            'age_range_start',
+            'age_range_end',
+            'preferred_language',
+            'accept_new_patients',
+            'home_visits_only',
+            'clinic_visits_only',
+            'max_travel_distance',
+            'weekends_available',
+            'evenings_available',
+            'preferences_updated_at'
+        ]);
+    }
+
+    public function updatePreferences(array $preferences)
+    {
+        $validPreferences = [
+            'preferred_gender',
+            'age_range_start',
+            'age_range_end',
+            'preferred_language',
+            'accept_new_patients',
+            'home_visits_only',
+            'clinic_visits_only',
+            'max_travel_distance',
+            'weekends_available',
+            'evenings_available',
+        ];
+
+        $filteredPreferences = array_intersect_key(
+            $preferences,
+            array_flip($validPreferences)
+        );
+
+        $filteredPreferences['preferences_updated_at'] = now();
+
+        return $this->update($filteredPreferences);
+    }
+
+
+    public function getFormattedPreferencesAttribute()
+    {
+        return [
+            'service_user_preferences' => [
+                'preferred_gender' => $this->preferred_gender,
+                'age_range' => [
+                    'start' => $this->age_range_start,
+                    'end' => $this->age_range_end
+                ],
+                'preferred_language' => $this->preferred_language,
+            ],
+            'service_delivery' => [
+                'accept_new_patients' => $this->accept_new_patients,
+                'home_visits_only' => $this->home_visits_only,
+                'clinic_visits_only' => $this->clinic_visits_only,
+                'max_travel_distance' => $this->max_travel_distance,
+                'weekends_available' => $this->weekends_available,
+                'evenings_available' => $this->evenings_available,
+            ],
+            'last_updated' => $this->preferences_updated_at?->toISOString(),
+        ];
+    }
+
 
     /**
      * Get all available days for this therapist

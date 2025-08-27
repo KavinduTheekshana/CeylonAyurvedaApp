@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\CouponController;
 use App\Http\Controllers\Api\InvestmentController;
 use App\Http\Controllers\Api\TherapistAuthController;
 use App\Http\Controllers\Api\TherapistBookingController;
+use App\Http\Controllers\Api\TherapistPreferencesController;
 use App\Http\Controllers\Api\TreatmentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BookingController;
@@ -196,6 +197,12 @@ Route::prefix('therapist')->group(function () {
 
     // Protected Routes (Require Authentication)
     Route::middleware('auth:sanctum')->group(function () {
+
+        Route::prefix('preferences')->group(function () {
+            Route::get('/', [TherapistPreferencesController::class, 'getPreferences']);
+            Route::post('/', [TherapistPreferencesController::class, 'updatePreferences']);
+            Route::post('/reset', [TherapistPreferencesController::class, 'resetPreferences']);
+        });
 
 
 
@@ -431,6 +438,18 @@ Route::prefix('therapist')->group(function () {
             ]);
         });
     });
+});
+
+
+Route::middleware(['auth:sanctum', 'therapist'])->prefix('therapist')->group(function () {
+    
+    // Existing therapist routes...
+    // Route::post('/login', [TherapistController::class, 'login']);
+    // Route::get('/profile', [TherapistController::class, 'profile']);
+    // ... other existing routes
+    
+    // NEW: Therapist Preferences Routes
+    
 });
 
 
