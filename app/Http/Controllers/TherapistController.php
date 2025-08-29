@@ -15,6 +15,132 @@ use Carbon\Carbon;
 class TherapistController extends Controller
 {
 
+    public function getOnlineTherapists()
+    {
+        try {
+            // Fetch only therapists who are:
+            // 1. Active (status = true)
+            // 2. Online (online_status = true)
+            $onlineTherapists = Therapist::where('status', true)
+                ->where('online_status', true)
+                ->select([
+                    'id',
+                    'name',
+                    'email',
+                    'phone',
+                    'image',
+                    'bio',
+                    'work_start_date',
+                    'status',
+                    'online_status',
+                    'profile_photo_path',
+                    'last_login_at',
+                    'created_at',
+                    'updated_at'
+                ])
+                ->orderBy('last_login_at', 'desc') // Show recently active first
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $onlineTherapists,
+                'count' => $onlineTherapists->count(),
+                'message' => 'Online therapists retrieved successfully'
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch online therapists',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    public function getTherapist($id)
+    {
+        try {
+            $therapist = Therapist::where('id', $id)
+                ->where('status', true)
+                ->select([
+                    'id',
+                    'name',
+                    'email',
+                    'phone',
+                    'image',
+                    'bio',
+                    'work_start_date',
+                    'status',
+                    'online_status',
+                    'profile_photo_path',
+                    'last_login_at',
+                    'created_at',
+                    'updated_at'
+                ])
+                ->first();
+
+            if (!$therapist) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Therapist not found'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $therapist,
+                'message' => 'Therapist retrieved successfully'
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch therapist',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    public function getAllTherapists()
+    {
+        try {
+            $therapists = Therapist::where('status', true)
+                ->select([
+                    'id',
+                    'name',
+                    'email',
+                    'phone',
+                    'image',
+                    'bio',
+                    'work_start_date',
+                    'status',
+                    'online_status',
+                    'profile_photo_path',
+                    'last_login_at',
+                    'created_at',
+                    'updated_at'
+                ])
+                ->orderBy('online_status', 'desc') // Online therapists first
+                ->orderBy('last_login_at', 'desc')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $therapists,
+                'count' => $therapists->count(),
+                'online_count' => $therapists->where('online_status', true)->count(),
+                'message' => 'Therapists retrieved successfully'
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch therapists',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
     public function show($id)
     {
         try {

@@ -76,7 +76,7 @@ class TherapistResource extends Resource
                             ->maxLength(500)
                             ->columnSpanFull(),
 
-                        Forms\Components\Grid::make(2)
+                        Forms\Components\Grid::make(3)
                             ->schema([
                                 DatePicker::make('work_start_date')
                                     ->label('Job Start Date')
@@ -87,7 +87,13 @@ class TherapistResource extends Resource
 
                                 Toggle::make('status')
                                     ->label('Active')
-                                    ->default(true),
+                                    ->default(true)
+                                    ->helperText('Enable/disable therapist account'),
+
+                                Toggle::make('online_status')
+                                    ->label('Online Status')
+                                    ->default(false)
+                                    ->helperText('Show as online/available to customers'),
                             ]),
                     ]),
 
@@ -401,6 +407,13 @@ class TherapistResource extends Resource
                 BooleanColumn::make('status')
                     ->label('Active'),
 
+                BooleanColumn::make('online_status')
+                    ->label('Online')
+                    ->trueIcon('heroicon-o-signal')
+                    ->falseIcon('heroicon-o-signal-slash')
+                    ->trueColor('success')
+                    ->falseColor('gray'),
+
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -411,6 +424,12 @@ class TherapistResource extends Resource
                     ->label('Active')
                     ->trueLabel('Only Active')
                     ->falseLabel('Only Inactive')
+                    ->nullable(),
+
+                Tables\Filters\TernaryFilter::make('online_status')
+                    ->label('Online Status')
+                    ->trueLabel('Online Only')
+                    ->falseLabel('Offline Only')
                     ->nullable(),
 
                 Tables\Filters\SelectFilter::make('preferred_gender')
@@ -648,6 +667,33 @@ class TherapistResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
+
+                    Tables\Actions\BulkAction::make('toggle_online_status')
+                        ->label('Toggle Online Status')
+                        ->icon('heroicon-o-signal')
+                        ->color('primary')
+                        ->form([
+                            Toggle::make('online_status')
+                                ->label('Set Online Status')
+                                ->default(true),
+                        ])
+                        ->action(function ($records, array $data) {
+                            $count = 0;
+                            foreach ($records as $record) {
+                                $record->update([
+                                    'online_status' => $data['online_status'],
+                                ]);
+                                $count++;
+                            }
+
+                            $status = $data['online_status'] ? 'online' : 'offline';
+                            Notification::make()
+                                ->title('Online Status Updated')
+                                ->body("{$count} therapist(s) marked as {$status}")
+                                ->success()
+                                ->send();
+                        })
+                        ->requiresConfirmation(),
 
                     Tables\Actions\BulkAction::make('update_accept_new_patients')
                         ->label('Toggle New Patient Acceptance')

@@ -441,17 +441,14 @@ Route::prefix('therapist')->group(function () {
 });
 
 
-Route::middleware(['auth:sanctum', 'therapist'])->prefix('therapist')->group(function () {
+Route::prefix('therapists')->group(function () {
+    // Public routes (no authentication required)
+    Route::get('/online', [TherapistController::class, 'getOnlineTherapists']);
+    Route::get('/all', [TherapistController::class, 'getAllTherapists']);
+    Route::get('/{id}', [TherapistController::class, 'getTherapist']);
     
-    // Existing therapist routes...
-    // Route::post('/login', [TherapistController::class, 'login']);
-    // Route::get('/profile', [TherapistController::class, 'profile']);
-    // ... other existing routes
-    
-    // NEW: Therapist Preferences Routes
-    
+   
 });
-
 
 
 
