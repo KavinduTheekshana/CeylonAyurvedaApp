@@ -2,18 +2,220 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\TherapistOtpMail;
 use App\Models\Service;
 use App\Models\Therapist;
 use App\Models\TherapistAvailability;
 use App\Models\Booking;
+use DB;
+use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
+use Mail;
 
 class TherapistController extends Controller
 {
+
+    public function register(Request $request)
+    {
+        try {
+            // Validation
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|min:2|max:255',
+                'email' => 'required|email|unique:therapists,email',
+                'phone' => 'required|string|min:10|max:20|unique:therapists,phone',
+                'password' => 'required|string|min:8|confirmed',
+                'bio' => 'nullable|string|max:1000',
+            ], [
+                'name.required' => 'Full name is required',
+                'name.min' => 'Name must be at least 2 characters',
+                'email.required' => 'Email address is required',
+                'email.email' => 'Please enter a valid email address',
+                'email.unique' => 'This email is already registered',
+                'phone.required' => 'Phone number is required',
+                'phone.min' => 'Phone number must be at least 10 digits',
+                'phone.unique' => 'This phone number is already registered',
+                'password.required' => 'Password is required',
+                'password.min' => 'Password must be at least 8 characters',
+                'password.confirmed' => 'Password confirmation does not match',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            // Create therapist
+            $therapist = Therapist::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'phone' => $request->phone,
+                'password' => $request->password, // Will be hashed by mutator
+                'bio' => $request->bio,
+                'work_start_date' => Carbon::now()->format('Y-m-d'),
+                'status' => false, // Will be activated after verification
+                'online_status' => false,
+                'is_verified' => false,
+            ]);
+
+            // Generate and send OTP
+            $otp = $therapist->generateOtp();
+            
+            // Send OTP email
+            Mail::to($therapist->email)->send(new TherapistOtpMail($therapist, $otp));
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Registration successful! Please check your email for verification code.',
+                'data' => [
+                    'therapist_id' => $therapist->id,
+                    'email' => $therapist->email,
+                    'otp_expires_in' => 10 // minutes
+                ]
+            ], 201);
+
+        } catch (Exception $e) {
+            DB::rollBack();
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Registration failed. Please try again.',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    public function verifyOtp(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'email' => 'required|email',
+                'otp' => 'required|string|size:6'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $therapist = Therapist::where('email', $request->email)->first();
+
+            if (!$therapist) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Therapist not found'
+                ], 404);
+            }
+
+            if ($therapist->is_verified) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Account is already verified'
+                ], 400);
+            }
+
+            if ($therapist->isOtpExpired()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'OTP has expired. Please request a new one.'
+                ], 400);
+            }
+
+            if ($therapist->verifyOtp($request->otp)) {
+                // Activate therapist account after verification
+                $therapist->update(['status' => true]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Account verified successfully! You can now login.',
+                    'data' => [
+                        'therapist_id' => $therapist->id,
+                        'is_verified' => true,
+                        'status' => $therapist->status
+                    ]
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid OTP code'
+                ], 400);
+            }
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Verification failed. Please try again.',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    public function resendOtp(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'email' => 'required|email'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $therapist = Therapist::where('email', $request->email)->first();
+
+            if (!$therapist) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Therapist not found'
+                ], 404);
+            }
+
+            if ($therapist->is_verified) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Account is already verified'
+                ], 400);
+            }
+
+            // Generate new OTP
+            $otp = $therapist->generateOtp();
+            
+            // Send OTP email
+            Mail::to($therapist->email)->send(new TherapistOtpMail($therapist, $otp));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'New verification code sent to your email',
+                'data' => [
+                    'otp_expires_in' => 10 // minutes
+                ]
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to resend OTP. Please try again.',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
 
     public function getOnlineTherapists()
     {

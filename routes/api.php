@@ -188,6 +188,10 @@ Route::prefix('therapist')->group(function () {
     // Public Authentication Routes
     Route::post('login', [TherapistAuthController::class, 'login']);
     Route::post('register', [TherapistAuthController::class, 'register']);
+    
+    Route::post('register/app', [TherapistController::class, 'register']);
+    Route::post('/verify-otp', [TherapistController::class, 'verifyOtp']);
+    Route::post('/resend-otp', [TherapistController::class, 'resendOtp']);
 
     // Password Reset Routes  
     Route::post('forgot-password', [TherapistAuthController::class, 'forgotPassword']);

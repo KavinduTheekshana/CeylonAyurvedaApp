@@ -21,6 +21,9 @@ return new class extends Migration
             $table->boolean('status')->default(true);
             $table->boolean('online_status')->default(false);
             $table->string('password');
+            $table->string('otp_code', 6)->nullable();
+            $table->timestamp('otp_expires_at')->nullable();
+            $table->boolean('is_verified')->default(false);
             $table->timestamp('email_verified_at')->nullable();
             $table->rememberToken();
             $table->string('profile_photo_path', 2048)->nullable();

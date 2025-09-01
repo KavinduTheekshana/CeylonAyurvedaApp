@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Hash;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -25,6 +26,9 @@ class Therapist extends Authenticatable implements FilamentUser
         'work_start_date',
         'status',
         'online_status',
+        'otp_code',
+        'otp_expires_at',
+        'is_verified',
         'password',
         'email_verified_at',
         'profile_photo_path',
@@ -49,6 +53,7 @@ class Therapist extends Authenticatable implements FilamentUser
     protected $hidden = [
         'password',
         'remember_token',
+        'otp_code',
     ];
 
     protected function casts(): array
@@ -68,8 +73,49 @@ class Therapist extends Authenticatable implements FilamentUser
             'age_range_start' => 'integer',
             'age_range_end' => 'integer',
             'max_travel_distance' => 'integer',
+            'is_verified' => 'boolean',
+            'otp_expires_at' => 'datetime',
         ];
     }
+
+    // Mutator for password hashing
+    public function setPasswordAttribute($value)
+    {
+        $this->attributes['password'] = Hash::make($value);
+    }
+
+    // Generate OTP
+    public function generateOtp()
+    {
+        $this->otp_code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $this->otp_expires_at = Carbon::now()->addMinutes(10); // OTP expires in 10 minutes
+        $this->save();
+        
+        return $this->otp_code;
+    }
+
+    // Verify OTP
+    public function verifyOtp($otp)
+    {
+        if ($this->otp_code === $otp && $this->otp_expires_at > Carbon::now()) {
+            $this->is_verified = true;
+            $this->email_verified_at = Carbon::now();
+            $this->otp_code = null;
+            $this->otp_expires_at = null;
+            $this->save();
+            
+            return true;
+        }
+        
+        return false;
+    }
+
+    // Check if OTP is expired
+    public function isOtpExpired()
+    {
+        return $this->otp_expires_at && $this->otp_expires_at < Carbon::now();
+    }
+    
     /**
      * Determine if the user can access the given Filament panel.
      */
