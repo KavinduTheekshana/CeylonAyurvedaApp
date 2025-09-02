@@ -136,7 +136,7 @@ class TherapistController extends Controller
 
             if ($therapist->verifyOtp($request->otp)) {
                 // Activate therapist account after verification
-                $therapist->update(['status' => true]);
+                // $therapist->update(['status' => true]);
 
                 return response()->json([
                     'success' => true,
