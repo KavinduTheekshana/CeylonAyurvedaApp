@@ -71,7 +71,7 @@ class TherapistResource extends Resource
                                             ->imageCropAspectRatio('1:1')
                                             ->imageResizeTargetWidth('400')
                                             ->imageResizeTargetHeight('400')
-                                            ->optimize('webp')
+                                            // ->optimize('webp')
                                             ->columnSpan(1)
                                             ->helperText('Upload a professional profile photo'),
 
