@@ -9,6 +9,7 @@ use App\Models\TherapistAvailability;
 use App\Models\Booking;
 use DB;
 use Exception;
+use Hash;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -18,6 +19,258 @@ use Mail;
 
 class TherapistController extends Controller
 {
+
+    public function getAccountDeletionInfo(Request $request)
+    {
+        try {
+            $therapist = $request->user();
+// dd($therapist);
+
+            if (!$therapist) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated user'
+                ], 401);
+            }
+
+            // Check for pending/confirmed bookings
+            $pendingBookings = $therapist->bookings()
+                ->whereIn('status', ['pending', 'confirmed'])
+                ->where('date', '>=', now()->toDateString())
+                ->count();
+
+            // Check for today's bookings
+            $todayBookings = $therapist->bookings()
+                ->whereIn('status', ['pending', 'confirmed'])
+                ->where('date', now()->toDateString())
+                ->count();
+
+            // Check for upcoming bookings (next 7 days)
+            $upcomingBookings = $therapist->bookings()
+                ->whereIn('status', ['pending', 'confirmed'])
+                ->whereBetween('date', [now()->toDateString(), now()->addDays(7)->toDateString()])
+                ->count();
+
+            // Check for active holiday requests
+            $pendingHolidayRequests = $therapist->holidayRequests()
+                ->where('status', 'pending')
+                ->count();
+
+            // Check if therapist is currently online
+            $isOnline = $therapist->online_status;
+
+            // Determine if account can be deleted
+            $canDelete = $pendingBookings === 0;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'can_delete' => $canDelete,
+                    'pending_bookings_count' => $pendingBookings,
+                    'today_bookings_count' => $todayBookings,
+                    'upcoming_bookings_count' => $upcomingBookings,
+                    'pending_holiday_requests' => $pendingHolidayRequests,
+                    'is_online' => $isOnline,
+                    'deletion_constraints' => [
+                        'pending_bookings' => $pendingBookings > 0,
+                        'today_bookings' => $todayBookings > 0,
+                        'upcoming_bookings' => $upcomingBookings > 0,
+                    ],
+                    'constraints_message' => $pendingBookings > 0
+                        ? "You have {$pendingBookings} pending/confirmed bookings. Please complete or cancel all future bookings before deleting your account."
+                        : 'Your account is ready for deletion.',
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Account deletion info error: ' . $e->getMessage(), [
+                'therapist_id' => $request->user()?->id
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get account information',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete therapist account and all related data
+     */
+    public function deleteAccount(Request $request)
+    {
+        try {
+            $therapist = $request->user();
+
+            if (!$therapist) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated user'
+                ], 401);
+            }
+
+            // Validate the request
+            $validator = Validator::make($request->all(), [
+                'password' => 'required|string',
+                'deletion_reason' => 'nullable|string|max:500'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Verify password
+            if (!Hash::check($request->password, $therapist->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid password provided'
+                ], 401);
+            }
+
+            // Check for pending/confirmed bookings
+            $pendingBookings = $therapist->bookings()
+                ->whereIn('status', ['pending', 'confirmed'])
+                ->where('date', '>=', now()->toDateString())
+                ->count();
+
+            if ($pendingBookings > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot delete account with pending bookings. Please complete or cancel all future bookings first.',
+                    'data' => [
+                        'pending_bookings_count' => $pendingBookings
+                    ]
+                ], 409);
+            }
+
+            DB::beginTransaction();
+
+            try {
+                $therapistId = $therapist->id;
+                $therapistEmail = $therapist->email;
+
+                // Log the deletion reason if provided
+                if ($request->deletion_reason) {
+                    Log::info("Therapist account deletion", [
+                        'therapist_id' => $therapistId,
+                        'email' => $therapistEmail,
+                        'reason' => $request->deletion_reason,
+                        'deleted_at' => now()
+                    ]);
+                }
+
+                // Delete or clean up files
+                if ($therapist->image) {
+                    try {
+                        Storage::disk('public')->delete($therapist->image);
+                    } catch (\Exception $e) {
+                        Log::warning('Failed to delete therapist image: ' . $e->getMessage());
+                    }
+                }
+
+                if ($therapist->profile_photo_path) {
+                    try {
+                        Storage::disk('public')->delete($therapist->profile_photo_path);
+                    } catch (\Exception $e) {
+                        Log::warning('Failed to delete therapist profile photo: ' . $e->getMessage());
+                    }
+                }
+
+                // Revoke all authentication tokens
+                $therapist->tokens()->delete();
+
+                // Handle related data based on your schema
+
+                // 1. Delete therapist availabilities
+                DB::table('therapist_availabilities')
+                    ->where('therapist_id', $therapistId)
+                    ->delete();
+
+                // 2. Delete or update therapist holiday requests
+                DB::table('therapist_holiday_requests')
+                    ->where('therapist_id', $therapistId)
+                    ->delete();
+
+                // 3. Detach from services (many-to-many relationship)
+                DB::table('service_therapist')
+                    ->where('therapist_id', $therapistId)
+                    ->delete();
+
+                // 4. Detach from locations (many-to-many relationship)
+                DB::table('location_therapist')
+                    ->where('therapist_id', $therapistId)
+                    ->delete();
+
+                // 5. Handle bookings - preserve history but remove therapist reference
+                // Update completed/cancelled bookings to preserve history
+                DB::table('bookings')
+                    ->where('therapist_id', $therapistId)
+                    ->whereIn('status', ['completed', 'cancelled'])
+                    ->update([
+                        'notes' => DB::raw("CONCAT(COALESCE(notes, ''), ' [Therapist account deleted]')"),
+                        'updated_at' => now()
+                    ]);
+
+                // For any remaining bookings (shouldn't exist due to check above, but safety measure)
+                DB::table('bookings')
+                    ->where('therapist_id', $therapistId)
+                    ->whereNotIn('status', ['completed', 'cancelled'])
+                    ->update([
+                        'status' => 'cancelled',
+                        'notes' => DB::raw("CONCAT(COALESCE(notes, ''), ' [Cancelled due to therapist account deletion]')"),
+                        'therapist_id' => null,
+                        'updated_at' => now()
+                    ]);
+
+                // Option 1: Soft delete approach (recommended for data retention)
+                // Modify email and phone to prevent conflicts if they try to re-register
+                $timestamp = time();
+                $therapist->email = $therapist->email . '_deleted_' . $timestamp;
+                $therapist->phone = $therapist->phone . '_deleted_' . $timestamp;
+                $therapist->status = false; // Deactivate account
+                $therapist->online_status = false; // Set offline
+                $therapist->save();
+
+                // Mark as deleted (if you're using soft deletes)
+                $therapist->delete();
+
+                // Option 2: Hard delete approach (uncomment if you prefer complete removal)
+                // $therapist->forceDelete();
+
+                DB::commit();
+
+                Log::info("Therapist account deleted successfully", [
+                    'therapist_id' => $therapistId,
+                    'email' => $therapistEmail
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Your account has been deleted successfully. We\'re sorry to see you go.'
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollback();
+                throw $e;
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Therapist account deletion error: ' . $e->getMessage(), [
+                'therapist_id' => $request->user()?->id,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete account. Please try again later.',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
 
     public function register(Request $request)
     {
@@ -68,7 +321,7 @@ class TherapistController extends Controller
 
             // Generate and send OTP
             $otp = $therapist->generateOtp();
-            
+
             // Send OTP email
             Mail::to($therapist->email)->send(new TherapistOtpMail($therapist, $otp));
 
@@ -86,7 +339,7 @@ class TherapistController extends Controller
 
         } catch (Exception $e) {
             DB::rollBack();
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Registration failed. Please try again.',
@@ -196,7 +449,7 @@ class TherapistController extends Controller
 
             // Generate new OTP
             $otp = $therapist->generateOtp();
-            
+
             // Send OTP email
             Mail::to($therapist->email)->send(new TherapistOtpMail($therapist, $otp));
 

@@ -188,7 +188,8 @@ Route::prefix('therapist')->group(function () {
     // Public Authentication Routes
     Route::post('login', [TherapistAuthController::class, 'login']);
     Route::post('register', [TherapistAuthController::class, 'register']);
-    
+
+
     Route::post('register/app', [TherapistController::class, 'register']);
     Route::post('/verify-otp', [TherapistController::class, 'verifyOtp']);
     Route::post('/resend-otp', [TherapistController::class, 'resendOtp']);
@@ -201,7 +202,8 @@ Route::prefix('therapist')->group(function () {
 
     // Protected Routes (Require Authentication)
     Route::middleware('auth:sanctum')->group(function () {
-
+        Route::delete('account', [TherapistController::class, 'deleteAccount']);
+        Route::get('account/deletion-info', [TherapistController::class, 'getAccountDeletionInfo']);
         Route::prefix('preferences')->group(function () {
             Route::get('/', [TherapistPreferencesController::class, 'getPreferences']);
             Route::post('/', [TherapistPreferencesController::class, 'updatePreferences']);
@@ -450,8 +452,8 @@ Route::prefix('therapists')->group(function () {
     Route::get('/online', [TherapistController::class, 'getOnlineTherapists']);
     Route::get('/all', [TherapistController::class, 'getAllTherapists']);
     Route::get('/{id}', [TherapistController::class, 'getTherapist']);
-    
-   
+
+
 });
 
 
