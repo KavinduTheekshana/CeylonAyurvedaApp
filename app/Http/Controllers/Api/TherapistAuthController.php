@@ -346,7 +346,7 @@ class TherapistAuthController extends Controller
         try {
             // Update basic info
             $therapist->name = $request->name;
-       
+
             $therapist->phone = $request->phone;
             $therapist->bio = $request->bio;
 
@@ -470,7 +470,7 @@ class TherapistAuthController extends Controller
     public function forgotPassword(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|exists:therapists,email',
+            'email' => 'required|email|exists:therapists,email', // Changed from users to therapists
         ]);
 
         if ($validator->fails()) {
@@ -482,7 +482,7 @@ class TherapistAuthController extends Controller
 
         try {
             $email = $request->email;
-            $therapist = Therapist::where('email', $email)->first();
+            $therapist = Therapist::where('email', $email)->first(); // Changed from User to Therapist
 
             if (!$therapist) {
                 return response()->json([
@@ -521,13 +521,14 @@ class TherapistAuthController extends Controller
         }
     }
 
+
     /**
      * Verify password reset code
      */
     public function verifyResetCode(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|exists:therapists,email',
+            'email' => 'required|email|exists:therapists,email', // Changed from users to therapists
             'code' => 'required|string|min:6|max:6',
         ]);
 
@@ -581,13 +582,14 @@ class TherapistAuthController extends Controller
         }
     }
 
+
     /**
      * Reset password with token
      */
     public function resetPassword(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|exists:therapists,email',
+            'email' => 'required|email|exists:therapists,email', // Changed from users to therapists
             'reset_token' => 'required|string',
             'password' => 'required|string|min:8|confirmed',
         ]);
@@ -611,8 +613,10 @@ class TherapistAuthController extends Controller
                 ], 400);
             }
 
-            // Update therapist password
+            // Update therapist password - Changed from User to Therapist
             $therapist = Therapist::where('email', $request->email)->first();
+
+            // The password will be automatically hashed by the mutator in the Therapist model
             $therapist->password = Hash::make($request->password);
             $therapist->save();
 

@@ -79,10 +79,10 @@ class Therapist extends Authenticatable implements FilamentUser
     }
 
     // Mutator for password hashing
-    public function setPasswordAttribute($value)
-    {
-        $this->attributes['password'] = Hash::make($value);
-    }
+    // public function setPasswordAttribute($value)
+    // {
+    //     $this->attributes['password'] = Hash::make($value);
+    // }
 
     // Generate OTP
     public function generateOtp()
