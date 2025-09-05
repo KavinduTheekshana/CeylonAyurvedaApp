@@ -1543,7 +1543,7 @@ class TherapistController extends Controller
             $therapist->save();
 
             // Log the status change for debugging
-            \Log::info('Therapist online status updated', [
+            Log::info('Therapist online status updated', [
                 'therapist_id' => $therapist->id,
                 'online_status' => $request->online_status,
                 'timestamp' => now()
@@ -1569,7 +1569,7 @@ class TherapistController extends Controller
                 'errors' => $e->errors()
             ], 422);
         } catch (\Exception $e) {
-            \Log::error('Online status update failed', [
+            Log::error('Online status update failed', [
                 'error' => $e->getMessage(),
                 'therapist_id' => auth('sanctum')->id(),
             ]);
@@ -1580,4 +1580,134 @@ class TherapistController extends Controller
             ], 500);
         }
     }
+
+
+
+
+
+    /**
+ * Get services assigned to a specific therapist
+ * Public endpoint for showing services when user selects a therapist first
+ */
+public function getTherapistServices($therapistId, Request $request)
+{
+    try {
+        Log::info("Fetching services for therapist ID: " . $therapistId);
+
+        // Get location_id from request parameter if provided
+        $locationId = $request->query('location_id');
+
+        // Find the therapist first
+        $therapist = Therapist::find($therapistId);
+
+        if (!$therapist) {
+            Log::warning("Therapist not found: " . $therapistId);
+            return response()->json([
+                'success' => false,
+                'message' => 'Therapist not found'
+            ], 404);
+        }
+
+        // Check if therapist is active
+        if (!$therapist->status) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Therapist is not currently active'
+            ], 400);
+        }
+
+        // Get services with proper relationship loading
+        $servicesQuery = $therapist->services()
+            ->where('services.status', true)
+            ->with(['treatment' => function($query) {
+                $query->select('id', 'name', 'image');
+            }]);
+
+        // If location is specified, only show services available at that location
+        if ($locationId) {
+            // Check if therapist works at this location
+            $worksAtLocation = $therapist->locations()->where('locations.id', $locationId)->exists();
+            
+            if (!$worksAtLocation) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Therapist does not work at the selected location'
+                ], 400);
+            }
+        }
+
+        $services = $servicesQuery->orderBy('services.title')->get();
+
+        Log::info("Found " . $services->count() . " services for therapist " . $therapistId);
+
+        // Format service data
+        $serviceData = $services->map(function($service) use ($therapist, $locationId) {
+            // Calculate if service is available (therapist has started working)
+            $isAvailable = $this->hasTherapistStartedWorking($therapist->work_start_date);
+            
+            // Get price information
+            $hasDiscount = $service->discount_price !== null && $service->discount_price < $service->price;
+            $isFreeService = $service->discount_price !== null && $service->discount_price == 0;
+            
+            return [
+                'id' => $service->id,
+                'title' => $service->title,
+                'subtitle' => $service->subtitle,
+                'description' => $service->description,
+                'benefits' => $service->benefits,
+                'image' => $service->image ? url('storage/' . $service->image) : null,
+                'duration' => $service->duration,
+                'price' => $service->price,
+                'discount_price' => $service->discount_price,
+                'has_discount' => $hasDiscount,
+                'is_free_service' => $isFreeService,
+                'offer' => $service->offer,
+                'treatment' => [
+                    'id' => $service->treatment->id,
+                    'name' => $service->treatment->name,
+                    'image' => $service->treatment->image ? url('storage/' . $service->treatment->image) : null,
+                ],
+                'therapist' => [
+                    'id' => $therapist->id,
+                    'name' => $therapist->name,
+                    'work_start_date' => $therapist->work_start_date,
+                ],
+                'is_available' => $isAvailable,
+                'availability_message' => !$isAvailable ? 
+                    'This service will be available from ' . Carbon::parse($therapist->work_start_date)->format('F j, Y') : 
+                    null,
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Services fetched successfully',
+            'data' => [
+                'therapist' => [
+                    'id' => $therapist->id,
+                    'name' => $therapist->name,
+                    'email' => $therapist->email,
+                    'phone' => $therapist->phone,
+                    'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,
+                    'bio' => $therapist->bio,
+                    'work_start_date' => $therapist->work_start_date,
+                    'online_status' => $therapist->online_status,
+                ],
+                'services' => $serviceData,
+                'total_services' => $serviceData->count(),
+                'location_id' => $locationId,
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error("Error fetching therapist services: " . $e->getMessage());
+        Log::error("Stack trace: " . $e->getTraceAsString());
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch therapist services',
+            'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+        ], 500);
+    }
+}
 }

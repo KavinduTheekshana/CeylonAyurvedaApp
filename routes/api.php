@@ -55,6 +55,8 @@ Route::get('/services/detail/{id}', [ServiceController::class, 'detail']);
 // Therapist routes
 Route::get('/services/{serviceId}/therapists', [TherapistController::class, 'getServiceTherapists']);
 
+// Get services for a specific therapist (public endpoint)
+Route::get('/therapists/{therapist}/services', [TherapistController::class, 'getTherapistServices']);
 
 // Time slots and availability routes
 Route::get('/timeslots', [TimeSlotController::class, 'getAvailableSlots']);

@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
+use Illuminate\Support\Facades\Http;
 
 class SocialAuthController extends Controller
 {
@@ -186,11 +187,12 @@ class SocialAuthController extends Controller
                 $tokenInfo = $tokenInfoResponse->json();
                 
                 // Check if token is valid and matches expected client IDs
-                $validAudience = in_array($tokenInfo['audience'] ?? '', [
-                    '754805117963-nfiuck1vfmmllbm3pkunmuj5svrj0967.apps.googleusercontent.com', // Android
-                    '754805117963-f8japisp2qr7nukjb2b77nm385h0gofm.apps.googleusercontent.com', // iOS
-                    '754805117963-dt9ttk8idoisn63i0dhubstriq91nos9.apps.googleusercontent.com'  // Web
-                ]);
+                // Check if token is valid and matches expected client IDs
+                    $validAudience = in_array($tokenInfo['audience'] ?? '', [
+                        '535360967629-vvneo12jmja16di715olhr2uual607r6.apps.googleusercontent.com', // Android
+                        '535360967629-s16f56i3t4s0d1l4cvc94ubqctmue9s4.apps.googleusercontent.com', // iOS  
+                        '535360967629-25mot10es3kse0cba9ncu4hcs89dr87k.apps.googleusercontent.com'  // Web
+                    ]);
                 
                 return $validAudience && isset($tokenInfo['email']) && $tokenInfo['email'] === $email;
             }
