@@ -196,7 +196,7 @@ Route::prefix('therapist')->group(function () {
     // Route::post('register', [TherapistAuthController::class, 'register']);
 
 
-    Route::post('register/app', [TherapistController::class, 'register']);
+    Route::post('/register/app', [TherapistController::class, 'register']);
     Route::post('/verify-otp', [TherapistController::class, 'verifyOtp']);
     Route::post('/resend-otp', [TherapistController::class, 'resendOtp']);
 
