@@ -193,7 +193,7 @@ Route::prefix('therapist')->group(function () {
 
     // Public Authentication Routes
     Route::post('login', [TherapistAuthController::class, 'login']);
-    // Route::post('register', [TherapistAuthController::class, 'register']);
+    Route::post('register', [TherapistAuthController::class, 'register']);
 
 
     Route::post('/registertherapist', [TherapistController::class, 'register']);
