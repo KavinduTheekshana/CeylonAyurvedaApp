@@ -22,6 +22,8 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\WebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\FCMTokenController;
+use App\Http\Controllers\Api\NotificationController;
 
 // Public routes
 Route::post('user/save', [UserController::class, 'register']);
@@ -134,6 +136,8 @@ Route::prefix('contact')->group(function () {
         Route::get('/messages/{id}', [ContactMessageController::class, 'show']);
     });
 });
+
+
 
 
 // Public routes (no auth required)
@@ -456,6 +460,16 @@ Route::prefix('therapists')->group(function () {
     Route::get('/{id}', [TherapistController::class, 'getTherapist']);
 
 
+});
+
+// FCM Token routes (require authentication)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/fcm-token', [FCMTokenController::class, 'store']);
+    Route::delete('/fcm-token', [FCMTokenController::class, 'destroy']);
+    
+    // Notification routes
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/{id}', [NotificationController::class, 'show']);
 });
 
 
