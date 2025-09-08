@@ -164,6 +164,7 @@ class TherapistAuthController extends Controller
         try {
             // Find the therapist
             $therapist = Therapist::where('email', $request->email)->first();
+            // dd($therapist->is_verified);
 
             // Check if therapist exists and password is correct
             if (!$therapist || !Hash::check($request->password, $therapist->password)) {
@@ -173,19 +174,7 @@ class TherapistAuthController extends Controller
                 ], 401);
             }
 
-            // Check if therapist account is active
-            if (!$therapist->status) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Your account is not active. Please contact admin for approval.',
-                    'data' => [
-                        'account_status' => 'inactive',
-                        'requires_approval' => true
-                    ]
-                ], 403);
-            }
-
-            // Check if email is verified
+             // Check if email is verified
             if ($therapist->email_verified_at === null) {
                 return response()->json([
                     'success' => false,
@@ -200,6 +189,50 @@ class TherapistAuthController extends Controller
                     ]
                 ], 403);
             }
+
+            // if (!$therapist->is_verified) {
+            //     return response()->json([
+            //         'success' => false,
+            //         'message' => 'Email verification required. Please verify your email to continue.',
+            //         'data' => [
+            //             'therapist' => [
+            //                 'id' => $therapist->id,
+            //                 'name' => $therapist->name,
+            //                 'email' => $therapist->email,
+            //             ],
+            //             'requires_verification' => true
+            //         ]
+            //     ], 403);
+            // }
+
+            // Check if therapist account is active
+            if (!$therapist->status) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Your account is not active. Please contact admin for approval.',
+                    'data' => [
+                        'account_status' => 'inactive',
+                        'requires_approval' => true
+                    ]
+                ], 403);
+            }
+
+            // Check if email is verified
+            // if ($therapist->email_verified_at === null) {
+            //     return response()->json([
+            //         'success' => false,
+            //         'message' => 'Email verification required. Please verify your email to continue.',
+            //         'data' => [
+            //             'therapist' => [
+            //                 'id' => $therapist->id,
+            //                 'name' => $therapist->name,
+            //                 'email' => $therapist->email,
+            //             ],
+            //             'requires_verification' => true
+            //         ]
+            //     ], 403);
+            // }
+      
 
             // Revoke previous tokens
             $therapist->tokens()->delete();

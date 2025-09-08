@@ -311,7 +311,7 @@ class TherapistController extends Controller
                 'name' => $request->name,
                 'email' => $request->email,
                 'phone' => $request->phone,
-                'password' => $request->password, // Will be hashed by mutator
+                'password' => Hash::make($request->password),
                 'bio' => $request->bio,
                 'work_start_date' => Carbon::now()->format('Y-m-d'),
                 'status' => false, // Will be activated after verification
