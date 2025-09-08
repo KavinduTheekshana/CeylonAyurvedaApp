@@ -463,14 +463,14 @@ Route::prefix('therapists')->group(function () {
 });
 
 // FCM Token routes (require authentication)
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/fcm-token', [FCMTokenController::class, 'store']);
-    Route::delete('/fcm-token', [FCMTokenController::class, 'destroy']);
+// Route::middleware('auth:sanctum')->group(function () {
+//     Route::post('/fcm-token', [FCMTokenController::class, 'store']);
+//     Route::delete('/fcm-token', [FCMTokenController::class, 'destroy']);
     
-    // Notification routes
-    Route::get('/notifications', [NotificationController::class, 'index']);
-    Route::get('/notifications/{id}', [NotificationController::class, 'show']);
-});
+//     // Notification routes
+//     Route::get('/notifications', [NotificationController::class, 'index']);
+//     Route::get('/notifications/{id}', [NotificationController::class, 'show']);
+// });
 
 
 
