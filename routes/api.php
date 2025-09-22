@@ -216,9 +216,6 @@ Route::prefix('therapist')->group(function () {
             Route::post('/reset', [TherapistPreferencesController::class, 'resetPreferences']);
         });
 
-
-
-
         Route::post('change-password', [TherapistAuthController::class, 'changePassword']);
         // In the therapist protected routes section
         Route::post('profile', [TherapistAuthController::class, 'updateProfile']);
@@ -262,9 +259,7 @@ Route::prefix('therapist')->group(function () {
         // Get schedule for date range
         Route::get('schedule', [TherapistBookingController::class, 'getSchedule']);
 
-        // ==============================================
-        // SERVICES & AVAILABILITY ROUTES
-        // ==============================================
+
 
         // Get therapist's services
         Route::get('services', function (Request $request) {
@@ -323,9 +318,7 @@ Route::prefix('therapist')->group(function () {
             ]);
         });
 
-        // ==============================================
-        // QUICK ACCESS ROUTES
-        // ==============================================
+    
 
         // Get upcoming bookings (next 7 days)
         Route::get('bookings/upcoming', function (Request $request) {
@@ -449,6 +442,39 @@ Route::prefix('therapist')->group(function () {
                 ]
             ]);
         });
+
+
+
+        Route::prefix('treatment-history')->group(function () {
+            // Get all treatment histories for therapist
+            Route::get('/', [App\Http\Controllers\Api\TreatmentHistoryController::class, 'index']);
+
+            // Create new treatment history
+            Route::post('/', [App\Http\Controllers\Api\TreatmentHistoryController::class, 'store']);
+
+            // Get specific treatment history
+            Route::get('/{id}', [App\Http\Controllers\Api\TreatmentHistoryController::class, 'show']);
+
+            // Update treatment history (only within 24 hours)
+            Route::put('/{id}', [App\Http\Controllers\Api\TreatmentHistoryController::class, 'update']);
+
+            // Get treatment history by booking ID
+            Route::get('/booking/{bookingId}', [App\Http\Controllers\Api\TreatmentHistoryController::class, 'getByBooking']);
+        });
+
+        // Quick route to check if booking has treatment history
+        Route::get('bookings/{bookingId}/has-treatment-history', function (Request $request, $bookingId) {
+            $therapist = $request->user();
+
+            $hasHistory = App\Models\TreatmentHistory::where('booking_id', $bookingId)
+                ->where('therapist_id', $therapist->id)
+                ->exists();
+
+            return response()->json([
+                'success' => true,
+                'has_history' => $hasHistory
+            ]);
+        });
     });
 });
 
@@ -466,7 +492,7 @@ Route::prefix('therapists')->group(function () {
 // Route::middleware('auth:sanctum')->group(function () {
 //     Route::post('/fcm-token', [FCMTokenController::class, 'store']);
 //     Route::delete('/fcm-token', [FCMTokenController::class, 'destroy']);
-    
+
 //     // Notification routes
 //     Route::get('/notifications', [NotificationController::class, 'index']);
 //     Route::get('/notifications/{id}', [NotificationController::class, 'show']);

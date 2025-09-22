@@ -64,4 +64,9 @@ class Service extends Model
     {
         return $this->coupons()->active();
     }
+    // In app/Models/Service.php - Add this method
+    public function treatmentHistories()
+    {
+        return $this->hasMany(TreatmentHistory::class);
+    }
 }
