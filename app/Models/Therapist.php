@@ -90,7 +90,7 @@ class Therapist extends Authenticatable implements FilamentUser
         $this->otp_code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $this->otp_expires_at = Carbon::now()->addMinutes(10); // OTP expires in 10 minutes
         $this->save();
-        
+
         return $this->otp_code;
     }
 
@@ -103,10 +103,10 @@ class Therapist extends Authenticatable implements FilamentUser
             $this->otp_code = null;
             $this->otp_expires_at = null;
             $this->save();
-            
+
             return true;
         }
-        
+
         return false;
     }
 
@@ -115,7 +115,7 @@ class Therapist extends Authenticatable implements FilamentUser
     {
         return $this->otp_expires_at && $this->otp_expires_at < Carbon::now();
     }
-    
+
     /**
      * Determine if the user can access the given Filament panel.
      */
@@ -400,11 +400,14 @@ class Therapist extends Authenticatable implements FilamentUser
             ->exists();
     }
 
-    /**
- * Get chat rooms where therapist is involved
- */
-public function chatRooms()
+    public function treatmentHistories()
+    {
+        return $this->hasMany(TreatmentHistory::class);
+    }
+
+    public function chatRooms()
 {
     return $this->hasMany(ChatRoom::class, 'therapist_id');
 }
+
 }

@@ -56,10 +56,10 @@ class BankTransferBooking extends Mailable
     private function getBankDetails(): array
     {
         return [
-            'bank_name' => config('bank.name', 'HSBC'),
-            'account_name' => config('bank.account_name', 'ROUTE ONE RECRUITMENT SERVICES LTD'),
-            'account_number' => config('bank.account_number', '24161040'),
-            'sort_code' => config('bank.sort_code', '04-06-05'),
+            'bank_name' => config('bank.name', 'Barclays Bank'),
+            'account_name' => config('bank.account_name', 'CEYLON CARE LTD'),
+            'account_number' => config('bank.account_number', '43025632'),
+            'sort_code' => config('bank.sort_code', '20-63-28'),
             'reference' => $this->booking->reference,
         ];
     }

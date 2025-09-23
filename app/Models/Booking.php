@@ -122,4 +122,20 @@ class Booking extends Model
 
         return round((($this->original_price - $this->price) / $this->original_price) * 100, 2);
     }
+    // In app/Models/Booking.php - Add this method  
+    public function treatmentHistory()
+    {
+        return $this->hasOne(TreatmentHistory::class);
+    }
+    // Optional: Add this helper method to Booking model to check if treatment history exists
+    public function hasTreatmentHistory()
+    {
+        return $this->treatmentHistory()->exists();
+    }
+
+    // Optional: Add this helper method to Booking model to get treatment history if exists
+    public function getTreatmentHistoryAttribute()
+    {
+        return $this->treatmentHistory;
+    }
 }
