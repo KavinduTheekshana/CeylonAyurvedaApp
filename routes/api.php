@@ -24,6 +24,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\FCMTokenController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\UserPreferencesController;
+use App\Http\Controllers\ChatController;
+
+
 
 // Public routes
 Route::post('user/save', [UserController::class, 'register']);
@@ -78,6 +82,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/profile/update', [UserController::class, 'updateProfile']);
     Route::post('/password/update', [UserController::class, 'updatePassword']);
+
+    // Add User Preferences Routes
+    Route::prefix('user/preferences')->group(function () {
+        Route::get('/', [UserPreferencesController::class, 'getPreferences']);
+        Route::post('/', [UserPreferencesController::class, 'updatePreferences']);
+        Route::post('/reset', [UserPreferencesController::class, 'resetPreferences']);
+    });
 });
 
 // Bookings
@@ -173,6 +184,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
     //     Route::get('/{investment}', [InvestmentController::class, 'show']);
     //     Route::post('/confirm-payment', [InvestmentController::class, 'confirmPayment']);
     // });
+});
+
+
+Route::middleware('auth:sanctum')->group(function () {
+    // Your existing routes...
+    
+    // Chat routes
+    Route::get('/chats', [ChatController::class, 'index']);
+    Route::post('/chats/therapist/{therapistId}', [ChatController::class, 'createOrAccess']);
+    Route::get('/chats/{chatRoomId}/messages', [ChatController::class, 'getMessages']);
+    Route::post('/chats/{chatRoomId}/messages', [ChatController::class, 'sendMessage']);
+    Route::get('/chats/stats', [ChatController::class, 'getStats']);
 });
 
 

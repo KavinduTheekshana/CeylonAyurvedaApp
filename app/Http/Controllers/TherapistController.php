@@ -470,48 +470,75 @@ class TherapistController extends Controller
         }
     }
 
-    public function getOnlineTherapists()
-    {
-        try {
-            // Fetch only therapists who are:
-            // 1. Active (status = true)
-            // 2. Online (online_status = true)
-            $onlineTherapists = Therapist::where('status', true)
-                ->where('online_status', true)
-                ->select([
-                    'id',
-                    'name',
-                    'email',
-                    'phone',
-                    'image',
-                    'bio',
-                    'work_start_date',
-                    'status',
-                    'online_status',
-                    'profile_photo_path',
-                    'last_login_at',
-                    'created_at',
-                    'updated_at'
-                ])
-                ->orderBy('last_login_at', 'desc') // Show recently active first
-                ->get();
+    public function getOnlineTherapists(Request $request)
+{
+    try {
+        // Get location_id from request parameter
+        $locationId = $request->query('location_id');
 
-            return response()->json([
-                'success' => true,
-                'data' => $onlineTherapists,
-                'count' => $onlineTherapists->count(),
-                'message' => 'Online therapists retrieved successfully'
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch online therapists',
-                'error' => config('app.debug') ? $e->getMessage() : null
-            ], 500);
+        if ($locationId) {
+            Log::info("Fetching online therapists for location ID: " . $locationId);
+        } else {
+            Log::info("Fetching all online therapists (no location filter)");
         }
-    }
 
+        // Build the query for online therapists
+        $therapistsQuery = Therapist::where('status', true)
+            ->where('online_status', true);
+
+        // Add location filter if location_id is provided
+        if ($locationId) {
+            $therapistsQuery->whereHas('locations', function ($query) use ($locationId) {
+                $query->where('locations.id', $locationId);
+            });
+        }
+
+        // Fetch therapists with additional relationships if needed
+        $onlineTherapists = $therapistsQuery
+            ->select([
+                'id',
+                'name',
+                'email',
+                'phone',
+                'image',
+                'bio',
+                'work_start_date',
+                'status',
+                'online_status',
+                'profile_photo_path',
+                'last_login_at',
+                'created_at',
+                'updated_at'
+            ])
+            ->orderBy('last_login_at', 'desc') // Show recently active first
+            ->get();
+
+        $message = $locationId 
+            ? "Online therapists for location retrieved successfully" 
+            : "All online therapists retrieved successfully";
+
+        Log::info("Found " . $onlineTherapists->count() . " online therapists" . 
+                   ($locationId ? " for location " . $locationId : ""));
+
+        return response()->json([
+            'success' => true,
+            'data' => $onlineTherapists,
+            'count' => $onlineTherapists->count(),
+            'location_id' => $locationId,
+            'message' => $message
+        ], 200);
+
+    } catch (\Exception $e) {
+        Log::error('Error fetching online therapists: ' . $e->getMessage());
+        Log::error('Stack trace: ' . $e->getTraceAsString());
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch online therapists. Please try again.',
+            'error' => config('app.debug') ? $e->getMessage() : null
+        ], 500);
+    }
+}
     public function getTherapist($id)
     {
         try {

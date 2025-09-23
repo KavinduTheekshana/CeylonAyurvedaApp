@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
-class TherapistController extends Controller
+class TimeSlotController extends Controller
 {
     /**
      * Get therapists assigned to a specific service

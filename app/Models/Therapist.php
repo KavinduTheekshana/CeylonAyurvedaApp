@@ -399,4 +399,12 @@ class Therapist extends Authenticatable implements FilamentUser
             ->where('status', 'approved')
             ->exists();
     }
+
+    /**
+ * Get chat rooms where therapist is involved
+ */
+public function chatRooms()
+{
+    return $this->hasMany(ChatRoom::class, 'therapist_id');
+}
 }

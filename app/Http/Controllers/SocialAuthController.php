@@ -189,9 +189,9 @@ class SocialAuthController extends Controller
                 // Check if token is valid and matches expected client IDs
                 // Check if token is valid and matches expected client IDs
                     $validAudience = in_array($tokenInfo['audience'] ?? '', [
-                        '754805117963-nfiuck1vfmmllbm3pkunmuj5svrj0967.apps.googleusercontent.com', // Android
-                        '754805117963-f8japisp2qr7nukjb2b77nm385h0gofm.apps.googleusercontent.com', // iOS  
-                        '754805117963-dt9ttk8idoisn63i0dhubstriq91nos9.apps.googleusercontent.com'  // Web
+                        '620734709390-15vn7ohv0cg7beapivl8a1uuqjlk9k8j.apps.googleusercontent.com', // Android
+                        '620734709390-rta0q913bn8tbe8lnfa9t3pedqc3ecpg.apps.googleusercontent.com', // iOS  
+                        '620734709390-1lr2oddqol00p8ofkor08be43mgeupeu.apps.googleusercontent.com'  // Web
                     ]);
                 
                 return $validAudience && isset($tokenInfo['email']) && $tokenInfo['email'] === $email;

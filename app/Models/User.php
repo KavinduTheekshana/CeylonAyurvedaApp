@@ -30,6 +30,20 @@ class User extends Authenticatable
         'email',
         'verification_code',
         'password',
+        'two_factor_secret',
+        'two_factor_recovery_codes',
+        'two_factor_confirmed_at',
+        'verification_code',
+        'remember_token',
+        'current_team_id',
+        'profile_photo_path',
+        
+        // Add these new preference fields
+        'preferred_therapist_gender',
+        'preferred_language',
+        'preferred_age_range_therapist_start',
+        'preferred_age_range_therapist_end',
+        'preferences_updated_at',
     ];
 
     /**
@@ -63,6 +77,9 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'preferences_updated_at' => 'datetime',
+            'preferred_age_range_therapist_start' => 'integer',
+            'preferred_age_range_therapist_end' => 'integer',
         ];
     }
 
@@ -96,4 +113,30 @@ class User extends Authenticatable
     {
         return $this->couponUsages()->where('coupon_id', $couponId)->count();
     }
+
+    /**
+     * Update user preferences
+     */
+    public function updatePreferences(array $preferences)
+    {
+        $preferences['preferences_updated_at'] = now();
+        $this->update($preferences);
+        return $this;
+    }
+
+    /**
+ * Get chat rooms where user is a patient
+ */
+public function chatRooms()
+{
+    return $this->hasMany(ChatRoom::class, 'patient_id');
+}
+
+/**
+ * Get all messages sent by this user
+ */
+public function sentMessages()
+{
+    return $this->hasMany(ChatMessage::class, 'sender_id');
+}
 }
