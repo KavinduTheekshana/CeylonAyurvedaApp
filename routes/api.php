@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\FCMTokenController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\UserPreferencesController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\Api\PatientTreatmentHistoryController;
 
 
 
@@ -512,15 +513,20 @@ Route::prefix('therapists')->group(function () {
 });
 
 // FCM Token routes (require authentication)
-// Route::middleware('auth:sanctum')->group(function () {
-//     Route::post('/fcm-token', [FCMTokenController::class, 'store']);
-//     Route::delete('/fcm-token', [FCMTokenController::class, 'destroy']);
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/fcm-token', [FCMTokenController::class, 'store']);
+    Route::delete('/fcm-token', [FCMTokenController::class, 'destroy']);
 
-//     // Notification routes
-//     Route::get('/notifications', [NotificationController::class, 'index']);
-//     Route::get('/notifications/{id}', [NotificationController::class, 'show']);
-// });
+    // Notification routes
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/{id}', [NotificationController::class, 'show']);
+});
 
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/user/treatment-histories', [PatientTreatmentHistoryController::class, 'getUserTreatmentHistories']);
+    Route::get('/user/bookings/{bookingId}/treatment-history', [PatientTreatmentHistoryController::class, 'getByBooking']);
+});
 
 
 
