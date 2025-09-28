@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\CouponController;
 use App\Http\Controllers\Api\InvestmentController;
 use App\Http\Controllers\Api\TherapistAuthController;
 use App\Http\Controllers\Api\TherapistBookingController;
+use App\Http\Controllers\Api\TherapistPatientController;
 use App\Http\Controllers\Api\TherapistPreferencesController;
 use App\Http\Controllers\Api\TreatmentController;
 use App\Http\Controllers\AuthController;
@@ -189,7 +190,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 Route::middleware('auth:sanctum')->group(function () {
     // Your existing routes...
-    
+
     // Chat routes
     Route::get('/chats', [ChatController::class, 'index']);
     Route::post('/chats/therapist/{therapistId}', [ChatController::class, 'createOrAccess']);
@@ -283,6 +284,28 @@ Route::prefix('therapist')->group(function () {
         Route::get('schedule', [TherapistBookingController::class, 'getSchedule']);
 
 
+        // Patient Details 
+        Route::get('patients', [TherapistPatientController::class, 'getPatients']);
+
+        // Get specific patient details and booking history
+        Route::get('patients/{patientId}', [TherapistPatientController::class, 'getPatientDetails']);
+
+        // Get patient statistics for dashboard
+        Route::get('patients-stats', [TherapistPatientController::class, 'getPatientStats']);
+
+        // Search patients by name or email
+        Route::get('patients-search', [TherapistPatientController::class, 'searchPatients']);
+
+        // Get treatment history for a specific patient
+        Route::get('patients/{patientId}/treatment-history', [App\Http\Controllers\Api\TherapistPatientController::class, 'getPatientTreatmentHistory']);
+
+        // Get specific treatment history details
+        Route::get('patients/{patientId}/treatment-history/{historyId}', [App\Http\Controllers\Api\TherapistPatientController::class, 'getPatientTreatmentHistoryDetails']);
+
+        // Get treatment summary/stats for a patient
+        Route::get('patients/{patientId}/treatment-summary', [App\Http\Controllers\Api\TherapistPatientController::class, 'getPatientTreatmentSummary']);
+
+
 
         // Get therapist's services
         Route::get('services', function (Request $request) {
@@ -341,7 +364,7 @@ Route::prefix('therapist')->group(function () {
             ]);
         });
 
-    
+
 
         // Get upcoming bookings (next 7 days)
         Route::get('bookings/upcoming', function (Request $request) {
