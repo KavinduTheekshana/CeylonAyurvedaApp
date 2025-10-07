@@ -56,12 +56,25 @@ class ChatRoom extends Model
     }
 
     /**
-     * Get unread messages count for a specific user
+     * UPDATED: Get unread messages count for a specific user (patient)
+     * Now filters by sender_type to only count messages from therapist
      */
     public function getUnreadCountForUser($userId): int
     {
         return $this->messages()
-            ->where('sender_id', '!=', $userId)
+            ->where('sender_type', 'therapist')  // UPDATED: Only count therapist messages
+            ->where('is_read', false)
+            ->count();
+    }
+
+    /**
+     * ADDED: Get unread messages count for therapist
+     * Counts only messages from patient that therapist hasn't read
+     */
+    public function getUnreadCountForTherapist($therapistId): int
+    {
+        return $this->messages()
+            ->where('sender_type', 'patient')  // ADDED: Only count patient messages
             ->where('is_read', false)
             ->count();
     }
@@ -77,8 +90,19 @@ class ChatRoom extends Model
             return true;
         }
 
-        // For future: Check if user is therapist (if therapists have user accounts)
-        // Currently therapists don't have user_id in your DB structure
+        return false;
+    }
+
+    /**
+     * ADDED: Check if therapist has access to this chat room
+     */
+    public function hasTherapistAccess($therapistId): bool
+    {
+        // Check if this therapist is the therapist in this chat room
+        if ($this->therapist_id == $therapistId) {
+            return true;
+        }
+
         return false;
     }
 

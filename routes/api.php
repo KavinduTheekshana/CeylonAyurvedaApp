@@ -29,6 +29,8 @@ use App\Http\Controllers\Api\UserPreferencesController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\Api\PatientTreatmentHistoryController;
 use App\Http\Controllers\Api\TherapistFCMTokenController;
+use App\Http\Controllers\Api\TherapistChatController;
+
 
 
 
@@ -527,6 +529,18 @@ Route::prefix('therapist')->group(function () {
                 'has_history' => $hasHistory
             ]);
         });
+
+
+
+         // THERAPIST CHAT ROUTES - ADD THESE
+        Route::prefix('chats')->group(function () {
+            Route::get('/', [TherapistChatController::class, 'index']);
+            Route::get('/{chatRoomId}', [TherapistChatController::class, 'show']);
+            Route::get('/{chatRoomId}/messages', [TherapistChatController::class, 'getMessages']);
+            Route::post('/{chatRoomId}/messages', [TherapistChatController::class, 'sendMessage']);
+            Route::post('/{chatRoomId}/mark-read', [TherapistChatController::class, 'markAsRead']);
+        });
+
     });
 });
 

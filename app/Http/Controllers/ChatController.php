@@ -26,14 +26,29 @@ class ChatController extends Controller
                 ->where('is_active', true)
                 ->with([
                     'therapist:id,name,image,bio',
-                    'latestMessage:id,chat_room_id,sender_id,message_content,sent_at',
-                    'latestMessage.sender:id,name'
+                    'latestMessage:id,chat_room_id,sender_id,sender_type,message_content,sent_at',
+                    'latestMessage.patientSender:id,name',
+                    'latestMessage.therapistSender:id,name'
                 ])
                 ->orderBy('last_message_at', 'desc')
                 ->get();
 
             $formattedRooms = $chatRooms->map(function ($room) use ($user) {
                 $unreadCount = $room->getUnreadCountForUser($user->id);
+                
+                $lastMessage = null;
+                if ($room->latestMessage) {
+                    $senderName = $room->latestMessage->sender_type === 'patient' 
+                        ? $room->latestMessage->patientSender->name 
+                        : $room->latestMessage->therapistSender->name;
+                    
+                    $lastMessage = [
+                        'content' => $room->latestMessage->message_content,
+                        'sent_at' => $room->latestMessage->sent_at->format('Y-m-d H:i:s'),
+                        'sender_name' => $senderName,
+                        'sender_type' => $room->latestMessage->sender_type  // ADDED
+                    ];
+                }
                 
                 return [
                     'id' => $room->id,
@@ -44,11 +59,7 @@ class ChatController extends Controller
                                   asset('storage/' . $room->therapist->image) : null,
                         'bio' => $room->therapist->bio
                     ],
-                    'last_message' => $room->latestMessage ? [
-                        'content' => $room->latestMessage->message_content,
-                        'sent_at' => $room->latestMessage->sent_at->format('Y-m-d H:i:s'),
-                        'sender_name' => $room->latestMessage->sender->name
-                    ] : null,
+                    'last_message' => $lastMessage,
                     'unread_count' => $unreadCount,
                     'last_message_at' => $room->last_message_at?->format('Y-m-d H:i:s'),
                     'created_at' => $room->created_at->format('Y-m-d H:i:s')
@@ -71,9 +82,9 @@ class ChatController extends Controller
     }
 
     /**
-     * Create or access chat room with therapist
+     * Create or access a chat room with a therapist
      */
-    public function createOrAccess(Request $request, $therapistId)
+    public function createOrAccessChat(Request $request, $therapistId)
     {
         try {
             $user = Auth::user();
@@ -87,28 +98,25 @@ class ChatController extends Controller
                 ], 404);
             }
 
-            // Check if user has booking with this therapist
+            // Verify patient has booking with this therapist
             if (!ChatRoom::canCreateChatBetween($user->id, $therapistId)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'You must book a session with this therapist first to start chatting'
+                    'message' => 'You must have a booking with this therapist to start a chat'
                 ], 403);
             }
 
-            // Check if chat room already exists
-            $chatRoom = ChatRoom::where('patient_id', $user->id)
-                ->where('therapist_id', $therapistId)
-                ->first();
-
-            if (!$chatRoom) {
-                // Create new chat room
-                $chatRoom = ChatRoom::create([
+            // Find or create chat room
+            $chatRoom = ChatRoom::firstOrCreate(
+                [
                     'patient_id' => $user->id,
-                    'therapist_id' => $therapistId,
-                    'last_message_at' => now(),
-                    'is_active' => true
-                ]);
-            }
+                    'therapist_id' => $therapistId
+                ],
+                [
+                    'is_active' => true,
+                    'last_message_at' => now()
+                ]
+            );
 
             return response()->json([
                 'success' => true,
@@ -167,18 +175,31 @@ class ChatController extends Controller
 
             // Get messages with pagination (newest first, then reverse for display)
             $messages = $chatRoom->messages()
-                ->with('sender:id,name')
+                ->with([
+                    'patientSender:id,name',
+                    'therapistSender:id,name'
+                ])
                 ->orderBy('sent_at', 'desc')
                 ->paginate($perPage, ['*'], 'page', $page);
 
             $formattedMessages = $messages->map(function ($message) {
+                // UPDATED: Get sender info based on sender_type
+                $senderInfo = $message->sender_type === 'patient'
+                    ? [
+                        'id' => $message->patientSender->id,
+                        'name' => $message->patientSender->name,
+                        'type' => 'patient'  // ADDED
+                    ]
+                    : [
+                        'id' => $message->therapistSender->id,
+                        'name' => $message->therapistSender->name,
+                        'type' => 'therapist'  // ADDED
+                    ];
+
                 return [
                     'id' => $message->id,
                     'content' => $message->message_content,
-                    'sender' => [
-                        'id' => $message->sender->id,
-                        'name' => $message->sender->name
-                    ],
+                    'sender' => $senderInfo,  // UPDATED: Now includes type
                     'message_type' => $message->message_type,
                     'is_read' => $message->is_read,
                     'sent_at' => $message->sent_at->format('Y-m-d H:i:s'),
@@ -186,16 +207,10 @@ class ChatController extends Controller
                 ];
             });
 
-            // Mark messages as read (messages from other users)
-            $chatRoom->messages()
-                ->where('sender_id', '!=', $user->id)
-                ->where('is_read', false)
-                ->update(['is_read' => true]);
-
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'messages' => $formattedMessages->reverse()->values(), // Reverse to show oldest first
+                    'messages' => $formattedMessages,
                     'pagination' => [
                         'current_page' => $messages->currentPage(),
                         'last_page' => $messages->lastPage(),
@@ -258,6 +273,7 @@ class ChatController extends Controller
             $message = ChatMessage::create([
                 'chat_room_id' => $chatRoom->id,
                 'sender_id' => $user->id,
+                'sender_type' => 'patient',  // ADDED: Specify sender type
                 'message_content' => trim($request->message),
                 'message_type' => $request->get('message_type', 'text'),
                 'is_read' => false,
@@ -270,7 +286,7 @@ class ChatController extends Controller
             ]);
 
             // Load sender information
-            $message->load('sender:id,name');
+            $message->load('patientSender:id,name');
 
             return response()->json([
                 'success' => true,
@@ -278,8 +294,9 @@ class ChatController extends Controller
                     'id' => $message->id,
                     'content' => $message->message_content,
                     'sender' => [
-                        'id' => $message->sender->id,
-                        'name' => $message->sender->name
+                        'id' => $message->patientSender->id,
+                        'name' => $message->patientSender->name,
+                        'type' => 'patient'  // ADDED
                     ],
                     'message_type' => $message->message_type,
                     'is_read' => $message->is_read,
@@ -299,22 +316,33 @@ class ChatController extends Controller
     }
 
     /**
-     * Get chat statistics for admin (optional)
+     * Get chat statistics for the user
      */
-    public function getStats()
+    public function getStats(Request $request)
     {
         try {
-            $stats = [
-                'total_chat_rooms' => ChatRoom::count(),
-                'active_chat_rooms' => ChatRoom::where('is_active', true)->count(),
-                'total_messages' => ChatMessage::count(),
-                'messages_today' => ChatMessage::whereDate('sent_at', today())->count(),
-                'messages_this_week' => ChatMessage::whereBetween('sent_at', [now()->startOfWeek(), now()])->count()
-            ];
+            $user = Auth::user();
+            
+            $totalChats = ChatRoom::where('patient_id', $user->id)
+                ->where('is_active', true)
+                ->count();
+
+            // UPDATED: Count unread messages from therapists only
+            $unreadCount = ChatMessage::whereIn('chat_room_id', function ($query) use ($user) {
+                $query->select('id')
+                    ->from('chat_rooms')
+                    ->where('patient_id', $user->id);
+            })
+            ->where('sender_type', 'therapist')  // ADDED: Only count therapist messages
+            ->where('is_read', false)
+            ->count();
 
             return response()->json([
                 'success' => true,
-                'data' => $stats
+                'data' => [
+                    'total_chats' => $totalChats,
+                    'unread_messages' => $unreadCount
+                ]
             ]);
 
         } catch (\Exception $e) {
