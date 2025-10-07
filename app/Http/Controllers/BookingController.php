@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Validator;
 use App\Mail\BookingConfirmation;
 use App\Models\Coupon;
 use App\Models\CouponUsage;
+use App\Events\BookingCreated;
 
 class BookingController extends Controller
 {
@@ -39,8 +40,14 @@ class BookingController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|email|max:255',
             'phone' => 'required|string|max:20',
+
+            'visit_type' => 'required|in:home,branch',
+    
+            // Conditional validation: address required only for home visits
+            'address_line1' => 'required_if:visit_type,home|string|max:255',
+
             // Direct address fields
-            'address_line1' => 'required_without:address|string|max:255',
+            // 'address_line1' => 'required_without:address|string|max:255',
             'address_line2' => 'nullable|string|max:255',
             'city' => 'required_without:address|string|max:100',
             'postcode' => 'required_without:address|string|max:20',
@@ -146,10 +153,60 @@ class BookingController extends Controller
         }
 
         // Apply coupon if provided
-        $originalPrice = min($service->price, $service->discount_price ?? $service->price);
-        $finalPrice = $originalPrice;
+        $originalPrice = $service->discount_price ?? $service->price;
         $discountAmount = 0;
+        $homeVisitFee = 0;
         $couponId = null;
+
+        Log::info('Coupon code provided', ['coupon_code' => $request->coupon_code]);
+
+        if ($request->coupon_code) {
+            $coupon = Coupon::where('code', strtoupper($request->coupon_code))->first();
+            
+            if ($coupon && $coupon->isValid() && $coupon->isValidForService($service->id)) {
+                if ($user && !$coupon->isValidForUser($user->id)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You have already used this coupon the maximum number of times.'
+                    ], 422);
+                }
+
+                if ($coupon->minimum_amount && $originalPrice < $coupon->minimum_amount) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "This coupon requires a minimum purchase of £{$coupon->minimum_amount}."
+                    ], 422);
+                }
+
+                $discountAmount = $coupon->calculateDiscount($originalPrice);
+                $couponId = $coupon->id;
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid or expired coupon code.'
+                ], 422);
+            }
+        }
+
+        // Calculate subtotal after coupon
+        $subtotal = $originalPrice - $discountAmount;
+
+        // Add home visit fee if applicable
+        if ($request->visit_type === 'home') {
+            $homeVisitFee = config('booking.home_visit_fee');
+        }
+
+        // Calculate final price
+        $finalPrice = $subtotal + $homeVisitFee;
+
+        Log::info('Booking Price Calculation', [
+            'original_price' => $originalPrice,
+            'discount_amount' => $discountAmount,
+            'subtotal' => $subtotal,
+            'visit_type' => $request->visit_type,
+            'home_visit_fee' => $homeVisitFee,
+            'final_price' => $finalPrice,
+        ]);
 
         Log::info('Coupon code provided', ['coupon_code' => $request->coupon_code]);
 
@@ -225,6 +282,8 @@ class BookingController extends Controller
         $booking->coupon_code = $request->coupon_code ? strtoupper($request->coupon_code) : null;
         $booking->reference = $reference;
         $booking->location_id = $request->location_id;
+        $booking->visit_type = $request->visit_type;
+        $booking->home_visit_fee = $homeVisitFee > 0 ? $homeVisitFee : null;
 
 
         Log::info('AAAAAAAAAA', [
@@ -261,6 +320,12 @@ class BookingController extends Controller
         }
 
         $booking->save();
+
+        // Load relationships for the event
+        $booking->load(['therapist', 'service']);
+
+        // Dispatch event to notify therapist
+        event(new BookingCreated($booking));
 
         // Handle coupon usage
         if ($couponId) {
@@ -304,10 +369,12 @@ class BookingController extends Controller
                     'amount' => round($finalPrice * 100), // Stripe uses pence/cents
                     'currency' => 'gbp',
                     'metadata' => [
-                        'booking_id' => $booking->id,
-                        'booking_reference' => $booking->reference,
-                        'service_name' => $service->title ?? 'Service',
-                    ],
+                    'booking_id' => $booking->id,
+                    'booking_reference' => $booking->reference,
+                    'service_name' => $service->title ?? 'Service',
+                    'visit_type' => $request->visit_type,
+                    'home_visit_fee' => $homeVisitFee,
+                ],
                     'automatic_payment_methods' => [
                         'enabled' => true,
                     ],
@@ -437,6 +504,14 @@ class BookingController extends Controller
                 $booking->payment_method = 'card';
                 $booking->paid_at = now();
                 $booking->save();
+
+                // Load relationships if not already loaded
+                if (!$booking->relationLoaded('therapist')) {
+                    $booking->load(['therapist', 'service']);
+                }
+
+                // Dispatch event to notify therapist (if not already sent)
+                event(new BookingCreated($booking));
 
                 // Send confirmation email
                 try {

@@ -71,9 +71,12 @@ class ServiceController extends Controller
             ], 404);
         }
 
+        $serviceData = $service->toArray();
+        $serviceData['home_visit_fee'] = config('booking.home_visit_fee');
+
         return response()->json([
             'success' => true,
-            'data' => $service
+            'data' => $serviceData
         ]);
     }
 

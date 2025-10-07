@@ -123,4 +123,75 @@ class FCMService
             ->withAndroidConfig($androidConfig)
             ->withApnsConfig($apnsConfig);
     }
+
+
+    /**
+     * Send notification to a specific device
+     */
+    public function sendToDevice(string $token, array $notification, array $data = [])
+    {
+        try {
+            // Create notification
+            $firebaseNotification = FirebaseNotification::create(
+                $notification['title'],
+                $notification['body']
+            );
+
+            // Create base message
+            $message = CloudMessage::withTarget('token', $token)
+                ->withNotification($firebaseNotification)
+                ->withData($data);
+
+            // Android configuration
+            $androidConfig = AndroidConfig::fromArray([
+                'priority' => 'high',
+                'notification' => [
+                    'sound' => 'default',
+                    'channel_id' => 'booking_notifications',
+                    'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
+                    'notification_priority' => 'PRIORITY_HIGH',
+                ],
+            ]);
+
+            $message = $message->withAndroidConfig($androidConfig);
+
+            // iOS configuration
+            $apnsConfig = ApnsConfig::fromArray([
+                'headers' => [
+                    'apns-priority' => '10',
+                ],
+                'payload' => [
+                    'aps' => [
+                        'alert' => [
+                            'title' => $notification['title'],
+                            'body' => $notification['body'],
+                        ],
+                        'sound' => 'default',
+                        'badge' => 1,
+                        'mutable-content' => 1,
+                    ],
+                ],
+            ]);
+
+            $message = $message->withApnsConfig($apnsConfig);
+
+            // Send message
+            $result = $this->messaging->send($message);
+
+            Log::info('FCM notification sent successfully', [
+                'token' => substr($token, 0, 20) . '...',
+                'message_id' => $result
+            ]);
+
+            return $result;
+
+        } catch (\Exception $e) {
+            Log::error('FCM send failed', [
+                'token' => substr($token, 0, 20) . '...',
+                'error' => $e->getMessage()
+            ]);
+
+            throw $e;
+        }
+    }
 }

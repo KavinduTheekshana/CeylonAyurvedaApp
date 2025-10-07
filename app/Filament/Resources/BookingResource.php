@@ -93,6 +93,35 @@ class BookingResource extends Resource
                             ]),
                     ]),
 
+
+                Section::make('Visit Type Information')
+                ->description('Select the type of visit for this booking')
+                ->icon('heroicon-o-map-pin')
+                ->schema([
+                    Grid::make(2)
+                        ->schema([
+                            Select::make('visit_type')
+                                ->label('Visit Type')
+                                ->options([
+                                    'home' => 'Home Visit',
+                                    'branch' => 'Branch Visit',
+                                ])
+                                ->required()
+                                ->default('branch')
+                                ->reactive()
+                                ->helperText('Select where the service will be provided'),
+                            
+                            TextInput::make('home_visit_fee')
+                                ->label('Home Visit Fee')
+                                ->prefix('£')
+                                ->numeric()
+                                ->disabled()
+                                ->dehydrated(false)
+                                ->visible(fn($record) => $record && $record->visit_type === 'home')
+                                ->helperText('Fee charged for home visit service'),
+                        ]),
+                ]),
+
                 Section::make('Address Information')
                     ->description('Customer address details')
                     ->icon('heroicon-o-map-pin')
@@ -320,7 +349,19 @@ class BookingResource extends Resource
                     ->placeholder('Not assigned')
                     ->badge()
                     ->color('info'),
-                
+
+                BadgeColumn::make('visit_type')
+                    ->label('Visit Type')
+                    ->colors([
+                        'primary' => 'home',
+                        'success' => 'branch',
+                    ])
+                    ->icons([
+                        'heroicon-o-home' => 'home',
+                        'heroicon-o-building-office' => 'branch',
+                    ])
+                    ->formatStateUsing(fn($state) => $state === 'home' ? 'Home Visit' : 'Branch Visit'),
+                            
                 TextColumn::make('date')
                     ->label('Date')
                     ->date('M d, Y')
@@ -360,10 +401,17 @@ class BookingResource extends Resource
                     ->money('GBP')
                     ->sortable()
                     ->description(function (Booking $record): ?string {
+                        $descriptions = [];
+                        
                         if ($record->discount_amount > 0) {
-                            return 'Discount: £' . number_format($record->discount_amount, 2);
+                            $descriptions[] = 'Discount: £' . number_format($record->discount_amount, 2);
                         }
-                        return null;
+                        
+                        if ($record->home_visit_fee && $record->home_visit_fee > 0) {
+                            $descriptions[] = 'Home Fee: £' . number_format($record->home_visit_fee, 2);
+                        }
+                        
+                        return !empty($descriptions) ? implode(' | ', $descriptions) : null;
                     }),
                 
                 TextColumn::make('location.name')
@@ -427,6 +475,14 @@ class BookingResource extends Resource
                     ->relationship('service', 'title')
                     ->searchable()
                     ->preload(),
+
+                SelectFilter::make('visit_type')
+                    ->label('Visit Type')
+                    ->options([
+                        'home' => 'Home Visit',
+                        'branch' => 'Branch Visit',
+                    ])
+                    ->multiple(),
 
                 Filter::make('date_range')
                     ->form([

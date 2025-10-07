@@ -410,4 +410,31 @@ class Therapist extends Authenticatable implements FilamentUser
     return $this->hasMany(ChatRoom::class, 'therapist_id');
 }
 
+ /**
+     * Get the FCM tokens for the therapist
+     */
+    public function fcmTokens(): HasMany
+    {
+        return $this->hasMany(TherapistFcmToken::class);
+    }
+
+    /**
+     * Check if therapist has active FCM tokens
+     */
+    public function hasActiveFcmTokens(): bool
+    {
+        return $this->fcmTokens()->where('is_active', true)->exists();
+    }
+
+    /**
+     * Get active FCM token strings
+     */
+    public function getActiveFcmTokens()
+    {
+        return $this->fcmTokens()
+            ->where('is_active', true)
+            ->pluck('fcm_token')
+            ->toArray();
+    }
+
 }

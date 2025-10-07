@@ -399,6 +399,12 @@
                         <td class="detail-label">Duration:</td>
                         <td class="detail-value">{{ $service->duration }} minutes</td>
                     </tr>
+                    <tr>
+                        <td class="detail-label">Visit Type:</td>
+                        <td class="detail-value">
+                            {{ $booking->visit_type === 'home' ? '🏠 Home Visit' : '🏢 Branch Visit' }}
+                        </td>
+                    </tr>
                     @if($booking->discount_amount > 0)
                     <tr>
                         <td class="detail-label">Original Price:</td>
@@ -414,6 +420,12 @@
                         <td class="detail-value">{{ $booking->coupon_code }}</td>
                     </tr>
                     @endif
+                    @endif
+                    @if($booking->home_visit_fee && $booking->home_visit_fee > 0)
+                    <tr>
+                        <td class="detail-label">Home Visit Fee:</td>
+                        <td class="detail-value">£{{ number_format($booking->home_visit_fee, 2) }}</td>
+                    </tr>
                     @endif
                     <tr>
                         <td class="detail-label">Amount to Pay:</td>
@@ -472,7 +484,7 @@
             @endif
 
             <div class="booking-details">
-                <h3>Appointment Location</h3>
+                <h3>{{ $booking->visit_type === 'home' ? 'Service Address' : 'Branch Location' }}</h3>
                 <p>
                     {{ $booking->address_line1 }}<br>
                     @if($booking->address_line2)

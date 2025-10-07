@@ -13,6 +13,7 @@ class Booking extends Model
     protected $fillable = [
         'user_id',
         'service_id',
+        'location_id', 
         'date',
         'time',
         'name',
@@ -34,7 +35,9 @@ class Booking extends Model
         'stripe_payment_intent_id',
         'payment_status',
         'payment_method',
-        'paid_at'
+        'paid_at',
+        'visit_type',      
+        'home_visit_fee' 
     ];
 
     protected $casts = [
@@ -43,6 +46,8 @@ class Booking extends Model
         'price' => 'decimal:2',
         'original_price' => 'decimal:2',
         'discount_amount' => 'decimal:2',
+        'home_visit_fee' => 'decimal:2',  
+        'visit_type' => 'string' 
     ];
 
     public function user()
@@ -137,5 +142,71 @@ class Booking extends Model
     public function getTreatmentHistoryAttribute()
     {
         return $this->treatmentHistory;
+    }
+
+    /**
+     * Check if this is a home visit booking
+     */
+    public function isHomeVisit(): bool
+    {
+        return $this->visit_type === 'home';
+    }
+
+    /**
+     * Check if this is a branch visit booking
+     */
+    public function isBranchVisit(): bool
+    {
+        return $this->visit_type === 'branch';
+    }
+
+    /**
+     * Get formatted visit type for display
+     */
+    public function getFormattedVisitTypeAttribute(): string
+    {
+        return $this->visit_type === 'home' ? 'Home Visit' : 'Branch Visit';
+    }
+
+    /**
+     * Check if booking has home visit fee
+     */
+    public function hasHomeVisitFee(): bool
+    {
+        return $this->home_visit_fee !== null && $this->home_visit_fee > 0;
+    }
+
+    /**
+     * Get formatted home visit fee
+     */
+    public function getFormattedHomeVisitFeeAttribute(): string
+    {
+        if (!$this->hasHomeVisitFee()) {
+            return '£0.00';
+        }
+        return '£' . number_format($this->home_visit_fee, 2);
+    }
+
+    /**
+     * Get total price including home visit fee
+     * (This should already match the 'price' field, but useful for clarity)
+     */
+    public function getTotalPriceAttribute(): float
+    {
+        return (float) $this->price;
+    }
+
+    /**
+     * Get price breakdown as array
+     */
+    public function getPriceBreakdown(): array
+    {
+        return [
+            'original_price' => (float) $this->original_price,
+            'discount_amount' => (float) $this->discount_amount,
+            'service_price' => (float) ($this->original_price - $this->discount_amount),
+            'home_visit_fee' => (float) ($this->home_visit_fee ?? 0),
+            'total_price' => (float) $this->price,
+        ];
     }
 }

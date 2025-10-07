@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\UserPreferencesController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\Api\PatientTreatmentHistoryController;
+use App\Http\Controllers\Api\TherapistFCMTokenController;
 
 
 
@@ -234,6 +235,10 @@ Route::prefix('therapist')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::delete('account', [TherapistController::class, 'deleteAccount']);
         Route::get('account/deletion-info', [TherapistController::class, 'getAccountDeletionInfo']);
+
+        Route::post('fcm-token', [TherapistFCMTokenController::class, 'store']);
+        Route::delete('fcm-token', [TherapistFCMTokenController::class, 'destroy']);
+
         Route::prefix('preferences')->group(function () {
             Route::get('/', [TherapistPreferencesController::class, 'getPreferences']);
             Route::post('/', [TherapistPreferencesController::class, 'updatePreferences']);
@@ -513,20 +518,22 @@ Route::prefix('therapists')->group(function () {
 });
 
 // FCM Token routes (require authentication)
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/fcm-token', [FCMTokenController::class, 'store']);
-    Route::delete('/fcm-token', [FCMTokenController::class, 'destroy']);
+// Route::middleware('auth:sanctum')->group(function () {
+//     Route::post('/fcm-token', [FCMTokenController::class, 'store']);
+//     Route::delete('/fcm-token', [FCMTokenController::class, 'destroy']);
 
-    // Notification routes
-    Route::get('/notifications', [NotificationController::class, 'index']);
-    Route::get('/notifications/{id}', [NotificationController::class, 'show']);
-});
+//     // Notification routes
+//     Route::get('/notifications', [NotificationController::class, 'index']);
+//     Route::get('/notifications/{id}', [NotificationController::class, 'show']);
+// });
 
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user/treatment-histories', [PatientTreatmentHistoryController::class, 'getUserTreatmentHistories']);
     Route::get('/user/bookings/{bookingId}/treatment-history', [PatientTreatmentHistoryController::class, 'getByBooking']);
 });
+
+
 
 
 

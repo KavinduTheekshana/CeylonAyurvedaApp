@@ -899,6 +899,9 @@ class TherapistController extends Controller
             // Get location_id from request parameter
             $locationId = $request->query('location_id');
 
+            // Get visit_type from request parameter
+            $visitType = $request->query('visit_type');
+
             if ($locationId) {
                 Log::info("Filtering therapists by location ID: " . $locationId);
             }
@@ -931,10 +934,32 @@ class TherapistController extends Controller
                 });
             }
 
+            // Filter by visit type if provided
+            if ($visitType) {
+                if ($visitType === 'home') {
+                    $therapistsQuery->where(function($query) {
+                        $query->where('home_visits_only', true)
+                            ->orWhere(function($subQuery) {
+                                $subQuery->where('home_visits_only', false)
+                                        ->where('clinic_visits_only', false);
+                            });
+                    });
+                } elseif ($visitType === 'branch') {
+                    $therapistsQuery->where(function($query) {
+                        $query->where('clinic_visits_only', true)
+                            ->orWhere(function($subQuery) {
+                                $subQuery->where('home_visits_only', false)
+                                        ->where('clinic_visits_only', false);
+                            });
+                    });
+                }
+            }
+
             $therapists = $therapistsQuery->orderBy('name')->get();
 
             Log::info("Found " . $therapists->count() . " therapists for service " . $serviceId .
-                ($locationId ? " in location " . $locationId : ""));
+            ($locationId ? " in location " . $locationId : "") .
+            ($visitType ? " for visit type " . $visitType : ""));
 
             // Format therapist data with availability information
             $therapistData = $therapists->map(function ($therapist) use ($service) {
@@ -1623,6 +1648,8 @@ public function getTherapistServices($therapistId, Request $request)
 
         // Get location_id from request parameter if provided
         $locationId = $request->query('location_id');
+        // Get visit_type from request parameter
+        $visitType = $request->query('visit_type');
 
         // Find the therapist first
         $therapist = Therapist::find($therapistId);

@@ -327,6 +327,12 @@
                         <td class="detail-label">Time:</td>
                         <td class="detail-value">{{ $booking->time }}</td>
                     </tr>
+                    <tr>
+                        <td class="detail-label">Visit Type:</td>
+                        <td class="detail-value">
+                            {{ $booking->visit_type === 'home' ? '🏠 Home Visit' : '🏢 Branch Visit' }}
+                        </td>
+                    </tr>
                     @if($booking->discount_amount > 0)
                     <tr>
                         <td class="detail-label">Original Price:</td>
@@ -343,6 +349,12 @@
                     </tr>
                     @endif
                     @endif
+                    @if($booking->home_visit_fee && $booking->home_visit_fee > 0)
+                    <tr>
+                        <td class="detail-label">Home Visit Fee:</td>
+                        <td class="detail-value">£{{ number_format($booking->home_visit_fee, 2) }}</td>
+                    </tr>
+                    @endif
                     <tr>
                         <td class="detail-label">Total Price:</td>
                         <td class="detail-value"><strong>£{{ number_format($booking->price, 2) }}</strong></td>
@@ -358,7 +370,7 @@
             @endif
 
             <div class="address-section">
-                <h3>📍 Appointment Location</h3>
+                <h3>📍 {{ $booking->visit_type === 'home' ? 'Service Address' : 'Branch Location' }}</h3>
                 <p>
                     {{ $booking->address_line1 }}<br>
                     @if($booking->address_line2)
