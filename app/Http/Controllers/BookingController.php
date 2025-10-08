@@ -20,6 +20,7 @@ use App\Mail\BookingConfirmation;
 use App\Models\Coupon;
 use App\Models\CouponUsage;
 use App\Events\BookingCreated;
+use App\Events\BookingCancelled;
 
 class BookingController extends Controller
 {
@@ -322,10 +323,8 @@ class BookingController extends Controller
         $booking->save();
 
         // Load relationships for the event
-        $booking->load(['therapist', 'service']);
+        $booking->load(['therapist', 'service', 'location']);
 
-        // Dispatch event to notify therapist
-        event(new BookingCreated($booking));
 
         // Handle coupon usage
         if ($couponId) {
@@ -341,6 +340,8 @@ class BookingController extends Controller
                 'final_amount' => $finalPrice,
             ]);
         }
+         // Dispatch event to notify therapist
+        event(new BookingCreated($booking));
 
         // HANDLE DIFFERENT PAYMENT METHODS
         if ($request->payment_method === 'card') {
@@ -434,22 +435,17 @@ class BookingController extends Controller
                 ], 500);
             }
         } else {
-            // BANK TRANSFER - NO PAYMENT INTENT NEEDED
-            // Send confirmation email to the customer
-            Log::info('DDDDDDDDD');
-            try {
-                Mail::to($booking->email)->send(new BankTransferBooking($booking));
-                Log::info('Booking confirmation email sent', [
-                    'booking_id' => $booking->id,
-                    'customer_email' => $booking->email,
-                ]);
-            } catch (\Exception $e) {
-                Log::error('Failed to send booking confirmation email', [
-                    'booking_id' => $booking->id,
-                    'error' => $e->getMessage()
-                ]);
-            }
+            // ✅ BANK TRANSFER
+            // Email will be sent automatically by event listener
+            // No need to wait for email here!
+            
+            Log::info('Bank transfer booking created successfully', [
+                'booking_id' => $booking->id,
+                'email' => $booking->email,
+                'reference' => $booking->reference
+            ]);
 
+            // Return SUCCESS immediately
             return response()->json([
                 'success' => true,
                 'message' => 'Booking request submitted successfully',
@@ -507,25 +503,16 @@ class BookingController extends Controller
 
                 // Load relationships if not already loaded
                 if (!$booking->relationLoaded('therapist')) {
-                    $booking->load(['therapist', 'service']);
+                    $booking->load(['therapist', 'service', 'location']);
                 }
 
-                // Dispatch event to notify therapist (if not already sent)
+                // ✅ Dispatch event - this will send confirmation email automatically
                 event(new BookingCreated($booking));
 
-                // Send confirmation email
-                try {
-                    Mail::to($booking->email)->send(new BookingConfirmation($booking));
-                    Log::info('Payment confirmation email sent', [
-                        'booking_id' => $booking->id,
-                        'customer_email' => $booking->email,
-                    ]);
-                } catch (\Exception $e) {
-                    Log::error('Failed to send payment confirmation email', [
-                        'booking_id' => $booking->id,
-                        'error' => $e->getMessage()
-                    ]);
-                }
+                Log::info('Payment confirmed and confirmation email triggered', [
+                    'booking_id' => $booking->id,
+                    'customer_email' => $booking->email,
+                ]);
 
                 return response()->json([
                     'success' => true,
@@ -681,6 +668,10 @@ class BookingController extends Controller
                 'user_id' => Auth::id() ?? 'guest',
                 'reference' => $booking->reference
             ]);
+
+            // ✅ Fire cancellation event
+            // This will send cancellation email automatically
+            event(new BookingCancelled($booking));
 
             // Return success response with plain structure for better iOS compatibility
             return response()->json([

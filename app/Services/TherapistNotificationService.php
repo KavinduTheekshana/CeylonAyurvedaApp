@@ -73,7 +73,7 @@ class TherapistNotificationService
             'title' => $title,
             'message' => $message,
             'sent_at' => now(),
-            'delivery_status' => 'sending',
+            'delivery_status' => 'sent',
         ]);
 
         $sentCount = 0;
@@ -178,7 +178,7 @@ class TherapistNotificationService
             'title' => $title,
             'message' => $message,
             'sent_at' => now(),
-            'delivery_status' => 'sending',
+            'delivery_status' => 'sent',
         ]);
 
         $sentCount = 0;
