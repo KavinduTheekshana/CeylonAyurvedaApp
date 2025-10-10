@@ -498,6 +498,7 @@ class TherapistController extends Controller
             ->select([
                 'id',
                 'name',
+                'nickname',
                 'email',
                 'phone',
                 'image',
@@ -547,6 +548,7 @@ class TherapistController extends Controller
                 ->select([
                     'id',
                     'name',
+                    'nickname',
                     'email',
                     'phone',
                     'image',
@@ -590,6 +592,7 @@ class TherapistController extends Controller
                 ->select([
                     'id',
                     'name',
+                    'nickname',
                     'email',
                     'phone',
                     'image',
@@ -687,6 +690,7 @@ class TherapistController extends Controller
             $therapistData = [
                 'id' => $therapist->id,
                 'name' => $therapist->name,
+                'nickname' => $therapist->nickname,
                 'email' => $therapist->email,
                 'phone' => $therapist->phone,
                 'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,
@@ -1001,6 +1005,7 @@ class TherapistController extends Controller
                 return [
                     'id' => $therapist->id,
                     'name' => $therapist->name,
+                     'nickname' => $therapist->nickname,
                     'email' => $therapist->email,
                     'phone' => $therapist->phone,
                     'image' => $therapist->image ? url('storage/' . $therapist->image) : null,
@@ -1300,6 +1305,7 @@ class TherapistController extends Controller
                 return [
                     'id' => $therapist->id,
                     'name' => $therapist->name,
+                    'nickname' => $therapist->nickname,
                     'email' => $therapist->email,
                     'phone' => $therapist->phone,
                     'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,
@@ -1724,6 +1730,7 @@ public function getTherapistServices($therapistId, Request $request)
                 'therapist' => [
                     'id' => $therapist->id,
                     'name' => $therapist->name,
+                    'nickname' => $therapist->nickname,
                     'work_start_date' => $therapist->work_start_date,
                 ],
                 'is_available' => $isAvailable,
@@ -1740,6 +1747,7 @@ public function getTherapistServices($therapistId, Request $request)
                 'therapist' => [
                     'id' => $therapist->id,
                     'name' => $therapist->name,
+                    'nickname' => $therapist->nickname,
                     'email' => $therapist->email,
                     'phone' => $therapist->phone,
                     'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,

@@ -25,7 +25,7 @@ class ChatController extends Controller
             $chatRooms = ChatRoom::where('patient_id', $user->id)
                 ->where('is_active', true)
                 ->with([
-                    'therapist:id,name,image,bio',
+                    'therapist:id,name,nickname,image,bio',
                     'latestMessage:id,chat_room_id,sender_id,sender_type,message_content,sent_at',
                     'latestMessage.patientSender:id,name',
                     'latestMessage.therapistSender:id,name'
@@ -55,6 +55,7 @@ class ChatController extends Controller
                     'therapist' => [
                         'id' => $room->therapist->id,
                         'name' => $room->therapist->name,
+                        'nickname' => $room->therapist->nickname, 
                         'image' => $room->therapist->image ? 
                                   asset('storage/' . $room->therapist->image) : null,
                         'bio' => $room->therapist->bio
@@ -84,7 +85,7 @@ class ChatController extends Controller
     /**
      * Create or access a chat room with a therapist
      */
-    public function createOrAccessChat(Request $request, $therapistId)
+    public function createOrAccess(Request $request, $therapistId)
     {
         try {
             $user = Auth::user();
@@ -125,6 +126,7 @@ class ChatController extends Controller
                     'therapist' => [
                         'id' => $therapist->id,
                         'name' => $therapist->name,
+                        'nickname' => $therapist->nickname, 
                         'image' => $therapist->image ? 
                                   asset('storage/' . $therapist->image) : null,
                         'bio' => $therapist->bio

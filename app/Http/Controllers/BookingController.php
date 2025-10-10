@@ -602,7 +602,8 @@ class BookingController extends Controller
                 'updated_at' => $booking->updated_at->format('Y-m-d H:i:s'),
                 // ADD: Include therapist information
                 'therapist_id' => $booking->therapist_id,
-                'therapist_name' => $therapist ? $therapist->name : null
+                'therapist_name' => $therapist ? $therapist->name : null,
+                'therapist_nickname' => $therapist ? $therapist->nickname : null,
             ];
 
             // Return the booking data

@@ -19,6 +19,7 @@ class Therapist extends Authenticatable implements FilamentUser
 
     protected $fillable = [
         'name',
+        'nickname', 
         'email',
         'phone',
         'image',

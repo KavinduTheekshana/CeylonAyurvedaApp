@@ -253,6 +253,7 @@ class TherapistAuthController extends Controller
                     'therapist' => [
                         'id' => $therapist->id,
                         'name' => $therapist->name,
+                        'nickname' => $therapist->nickname,
                         'email' => $therapist->email,
                         'phone' => $therapist->phone,
                         'bio' => $therapist->bio,
@@ -312,6 +313,7 @@ class TherapistAuthController extends Controller
                     'therapist' => [
                         'id' => $therapist->id,
                         'name' => $therapist->name,
+                        'nickname' => $therapist->nickname,
                         'email' => $therapist->email,
                         'phone' => $therapist->phone,
                         'bio' => $therapist->bio,
@@ -362,7 +364,7 @@ class TherapistAuthController extends Controller
 
         $validator = Validator::make($request->all(), [
             'name' => ['required', 'string', 'max:255'],
-
+             'nickname' => ['nullable', 'string', 'min:2', 'max:100'], 
             'phone' => ['required', 'string', 'max:20'],
             'bio' => ['nullable', 'string', 'max:1000'],
             'profile_photo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif', 'max:2048'],
@@ -379,7 +381,7 @@ class TherapistAuthController extends Controller
         try {
             // Update basic info
             $therapist->name = $request->name;
-
+            $therapist->nickname = $request->nickname; 
             $therapist->phone = $request->phone;
             $therapist->bio = $request->bio;
 
@@ -414,6 +416,7 @@ class TherapistAuthController extends Controller
                     'therapist' => [
                         'id' => $therapist->id,
                         'name' => $therapist->name,
+                        'nickname' => $therapist->nickname,
                         'email' => $therapist->email,
                         'phone' => $therapist->phone,
                         'bio' => $therapist->bio,
@@ -763,6 +766,7 @@ class TherapistAuthController extends Controller
                 'data' => [
                     'therapist' => [
                         'name' => $therapist->name,
+                        'nickname' => $therapist->nickname,
                         'email' => $therapist->email,
                         'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,
                     ],

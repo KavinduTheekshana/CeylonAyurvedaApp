@@ -85,6 +85,12 @@ class TherapistResource extends Resource
                                                     ->prefixIcon('heroicon-m-user')
                                                     ->placeholder('Enter therapist full name'),
 
+                                                TextInput::make('nickname')
+                                                    ->label('Nickname')
+                                                    ->helperText('Optional display name for patients')
+                                                    ->maxLength(100)
+                                                    ->placeholder('e.g., Dr. Sarah'),
+
                                                 TextInput::make('email')
                                                     ->label('Email Address')
                                                     ->email()
@@ -386,6 +392,12 @@ class TherapistResource extends Resource
                     ->weight('semibold')
                     ->description(fn (Therapist $record): ?string => $record->email)
                     ->wrap(),
+
+                TextColumn::make('nickname')
+                    ->searchable()
+                    ->sortable()
+                    ->default('—')  // Shows dash if no nickname
+                    ->color('gray'),
 
                 TextColumn::make('phone')
                     ->label('Contact')
@@ -1181,6 +1193,9 @@ class TherapistResource extends Resource
                                             ->label('Full Name')
                                             ->size('lg')
                                             ->weight('bold'),
+
+                                        TextEntry::make('nickname')
+                                            ->default('No nickname set'),
 
                                         TextEntry::make('email')
                                             ->label('Email')

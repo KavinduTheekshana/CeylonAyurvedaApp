@@ -37,7 +37,7 @@ class PatientTreatmentHistoryController extends Controller
                 ->with([
                     'booking:id,reference,date,time,address_line1,city,postcode',
                     'service:id,title,duration',
-                    'therapist:id,name'
+                    'therapist:id,name,nickname'
                 ])
                 ->first();
 
@@ -71,6 +71,7 @@ class PatientTreatmentHistoryController extends Controller
                     ],
                     'therapist' => [
                         'name' => $history->therapist->name,
+                        'nickname' => $history->therapist->nickname, 
                     ],
                     'treatment_details' => [
                         'treatment_notes' => $history->treatment_notes,
@@ -111,7 +112,7 @@ class PatientTreatmentHistoryController extends Controller
                 ->with([
                     'booking:id,reference,date,time,address_line1,city,postcode',
                     'service:id,title,duration',
-                    'therapist:id,name'
+                    'therapist:id,name,nickname' 
                 ])
                 ->orderBy('treatment_completed_at', 'desc')
                 ->paginate(10);
@@ -123,6 +124,7 @@ class PatientTreatmentHistoryController extends Controller
                     'booking_reference' => $history->booking->reference,
                     'service_title' => $history->service->title,
                     'therapist_name' => $history->therapist->name,
+                    'therapist_nickname' => $history->therapist->nickname, 
                     'treatment_date' => $history->booking->date,
                     'treatment_time' => \Carbon\Carbon::parse($history->booking->time)->format('g:i A'),
                     'formatted_date' => \Carbon\Carbon::parse($history->booking->date)->format('M j, Y'),
