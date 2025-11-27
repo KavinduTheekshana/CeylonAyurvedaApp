@@ -42,7 +42,7 @@ class BookingController extends Controller
             'email' => 'required|email|max:255',
             'phone' => 'required|string|max:20',
 
-            'visit_type' => 'required|in:home,branch',
+            // 'visit_type' => 'required|in:home,branch',
     
             // Conditional validation: address required only for home visits
             'address_line1' => 'required_if:visit_type,home|string|max:255',
