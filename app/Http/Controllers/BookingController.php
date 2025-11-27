@@ -283,7 +283,8 @@ class BookingController extends Controller
         $booking->coupon_code = $request->coupon_code ? strtoupper($request->coupon_code) : null;
         $booking->reference = $reference;
         $booking->location_id = $request->location_id;
-        $booking->visit_type = $request->visit_type;
+        // $booking->visit_type = $request->visit_type;
+        $booking->visit_type = $request->visit_type ?? 'branch';
         $booking->home_visit_fee = $homeVisitFee > 0 ? $homeVisitFee : null;
 
 
