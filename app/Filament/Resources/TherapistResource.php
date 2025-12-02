@@ -34,6 +34,7 @@ use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\Section as InfoSection;
 use Filament\Infolists\Components\Grid as InfoGrid;
 use Illuminate\Database\Eloquent\Model;
+use Filament\Forms\Components\Repeater;
 
 class TherapistResource extends Resource
 {
@@ -366,6 +367,87 @@ class TherapistResource extends Resource
                                             ->searchable()
                                             ->required()
                                             ->helperText('Select all services this therapist can provide')
+                                            ->columnSpanFull(),
+                                    ]),
+                            ]),
+
+                        Tabs\Tab::make('Address')
+                            ->icon('heroicon-m-home')
+                            ->schema([
+                                Forms\Components\Section::make('Therapist Address')
+                                    ->description('Manage personal address information for the therapist')
+                                    ->icon('heroicon-o-map')
+                                    ->schema([
+                                        Repeater::make('addresses')
+                                            ->relationship('addresses')
+                                            ->schema([
+                                                Forms\Components\Grid::make(2)
+                                                    ->schema([
+                                                        TextInput::make('address_line1')
+                                                            ->label('Address Line 1')
+                                                            ->required()
+                                                            ->maxLength(255)
+                                                            ->placeholder('Street address, P.O. box')
+                                                            ->columnSpanFull(),
+
+                                                        TextInput::make('address_line2')
+                                                            ->label('Address Line 2')
+                                                            ->maxLength(255)
+                                                            ->placeholder('Apartment, suite, unit, building, floor, etc.')
+                                                            ->columnSpanFull(),
+
+                                                        TextInput::make('city')
+                                                            ->label('City')
+                                                            ->required()
+                                                            ->maxLength(255)
+                                                            ->placeholder('Enter city name'),
+
+                                                        TextInput::make('postcode')
+                                                            ->label('Postcode')
+                                                            ->required()
+                                                            ->maxLength(20)
+                                                            ->placeholder('e.g., SW1A 1AA'),
+
+                                                        TextInput::make('country')
+                                                            ->label('Country')
+                                                            ->default('United Kingdom')
+                                                            ->required()
+                                                            ->maxLength(255)
+                                                            ->columnSpanFull(),
+
+                                                        Forms\Components\Grid::make(2)
+                                                            ->schema([
+                                                                TextInput::make('latitude')
+                                                                    ->label('Latitude')
+                                                                    ->numeric()
+                                                                    ->placeholder('e.g., 51.5074')
+                                                                    ->helperText('Optional - for map location'),
+
+                                                                TextInput::make('longitude')
+                                                                    ->label('Longitude')
+                                                                    ->numeric()
+                                                                    ->placeholder('e.g., -0.1278')
+                                                                    ->helperText('Optional - for map location'),
+                                                            ])
+                                                            ->columnSpanFull(),
+
+                                                        Toggle::make('is_primary')
+                                                            ->label('Set as Primary Address')
+                                                            ->default(false)
+                                                            ->helperText('Only one address can be primary')
+                                                            ->columnSpanFull(),
+                                                    ]),
+                                            ])
+                                            ->itemLabel(fn (array $state): ?string =>
+                                                !empty($state['address_line1'])
+                                                    ? $state['address_line1'] . ', ' . ($state['city'] ?? '')
+                                                    : null
+                                            )
+                                            ->collapsible()
+                                            ->collapsed()
+                                            ->defaultItems(0)
+                                            ->addActionLabel('Add Address')
+                                            ->reorderable(false)
                                             ->columnSpanFull(),
                                     ]),
                             ]),

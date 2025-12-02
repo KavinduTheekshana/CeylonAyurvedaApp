@@ -308,6 +308,22 @@ class Therapist extends Authenticatable implements FilamentUser
         return $this->belongsToMany(Location::class)->withTimestamps();
     }
 
+    /**
+     * Get the addresses for this therapist.
+     */
+    public function addresses(): HasMany
+    {
+        return $this->hasMany(TherapistAddress::class);
+    }
+
+    /**
+     * Get the primary address for this therapist.
+     */
+    public function primaryAddress()
+    {
+        return $this->hasOne(TherapistAddress::class)->where('is_primary', true);
+    }
+
     public function getImageUrlAttribute()
     {
         if ($this->image) {
