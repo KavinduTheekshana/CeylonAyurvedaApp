@@ -561,6 +561,8 @@ Route::prefix('therapists')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/fcm-token', [FCMTokenController::class, 'store']);
     Route::delete('/fcm-token', [FCMTokenController::class, 'destroy']);
+    Route::get('/fcm-token/stats', [FCMTokenController::class, 'stats']);
+    Route::get('/fcm-token/my-devices', [FCMTokenController::class, 'myDevices']);
 
     // Notification routes
     Route::get('/notifications', [NotificationController::class, 'index']);

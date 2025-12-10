@@ -6,6 +6,8 @@ use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvi
 use App\Events\BookingCreated;
 use App\Events\BookingCancelled;
 use App\Listeners\NotifyTherapistOfNewBooking;
+use App\Listeners\NotifyUserOfBookingConfirmation;
+use App\Listeners\NotifyUserOfBookingCancellation;
 use App\Listeners\SendBookingConfirmationEmail;
 use App\Listeners\SendBookingCancellationEmail;
 
@@ -20,12 +22,14 @@ class EventServiceProvider extends ServiceProvider
         // ... existing events ...
 
         BookingCreated::class => [
-            NotifyTherapistOfNewBooking::class,   // Send push notification to therapist
-            SendBookingConfirmationEmail::class,      // Send email to customer
+            NotifyTherapistOfNewBooking::class,        // Send push notification to therapist
+            NotifyUserOfBookingConfirmation::class,    // Send push notification to user
+            SendBookingConfirmationEmail::class,       // Send email to customer
         ],
 
          BookingCancelled::class => [
-            SendBookingCancellationEmail::class,      // Send cancellation email to customer
+            NotifyUserOfBookingCancellation::class,    // Send push notification to user
+            SendBookingCancellationEmail::class,       // Send cancellation email to customer
             // You can add more listeners here, e.g.:
             // NotifyTherapistOfCancellation::class,
         ],
