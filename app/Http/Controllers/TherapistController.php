@@ -24,7 +24,7 @@ class TherapistController extends Controller
     {
         try {
             $therapist = $request->user();
-// dd($therapist);
+            // dd($therapist);
 
             if (!$therapist) {
                 return response()->json([
@@ -471,75 +471,76 @@ class TherapistController extends Controller
     }
 
     public function getOnlineTherapists(Request $request)
-{
-    try {
-        // Get location_id from request parameter
-        $locationId = $request->query('location_id');
+    {
+        try {
+            // Get location_id from request parameter
+            $locationId = $request->query('location_id');
 
-        if ($locationId) {
-            Log::info("Fetching online therapists for location ID: " . $locationId);
-        } else {
-            Log::info("Fetching all online therapists (no location filter)");
+            if ($locationId) {
+                Log::info("Fetching online therapists for location ID: " . $locationId);
+            } else {
+                Log::info("Fetching all online therapists (no location filter)");
+            }
+
+            // Build the query for online therapists
+            $therapistsQuery = Therapist::where('status', true)
+                ->where('online_status', true)
+                ->with('locations');
+
+            // Add location filter if location_id is provided
+            if ($locationId) {
+                $therapistsQuery->whereHas('locations', function ($query) use ($locationId) {
+                    $query->where('locations.id', $locationId);
+                });
+            }
+
+            // Fetch therapists with additional relationships if needed
+            $onlineTherapists = $therapistsQuery
+                ->select([
+                    'id',
+                    'name',
+                    'nickname',
+                    'email',
+                    'phone',
+                    'image',
+                    'bio',
+                    'work_start_date',
+                    'status',
+                    'online_status',
+                    'profile_photo_path',
+                    'last_login_at',
+                    'created_at',
+                    'updated_at'
+                ])
+                ->orderBy('last_login_at', 'desc') // Show recently active first
+                ->get();
+
+            $message = $locationId
+                ? "Online therapists for location retrieved successfully"
+                : "All online therapists retrieved successfully";
+
+            Log::info("Found " . $onlineTherapists->count() . " online therapists" .
+                ($locationId ? " for location " . $locationId : ""));
+
+            return response()->json([
+                'success' => true,
+                'data' => $onlineTherapists,
+                'count' => $onlineTherapists->count(),
+                'location_id' => $locationId,
+                'message' => $message
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching online therapists: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch online therapists. Please try again.',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
         }
-
-        // Build the query for online therapists
-        $therapistsQuery = Therapist::where('status', true)
-            ->where('online_status', true);
-
-        // Add location filter if location_id is provided
-        if ($locationId) {
-            $therapistsQuery->whereHas('locations', function ($query) use ($locationId) {
-                $query->where('locations.id', $locationId);
-            });
-        }
-
-        // Fetch therapists with additional relationships if needed
-        $onlineTherapists = $therapistsQuery
-            ->select([
-                'id',
-                'name',
-                'nickname',
-                'email',
-                'phone',
-                'image',
-                'bio',
-                'work_start_date',
-                'status',
-                'online_status',
-                'profile_photo_path',
-                'last_login_at',
-                'created_at',
-                'updated_at'
-            ])
-            ->orderBy('last_login_at', 'desc') // Show recently active first
-            ->get();
-
-        $message = $locationId 
-            ? "Online therapists for location retrieved successfully" 
-            : "All online therapists retrieved successfully";
-
-        Log::info("Found " . $onlineTherapists->count() . " online therapists" . 
-                   ($locationId ? " for location " . $locationId : ""));
-
-        return response()->json([
-            'success' => true,
-            'data' => $onlineTherapists,
-            'count' => $onlineTherapists->count(),
-            'location_id' => $locationId,
-            'message' => $message
-        ], 200);
-
-    } catch (\Exception $e) {
-        Log::error('Error fetching online therapists: ' . $e->getMessage());
-        Log::error('Stack trace: ' . $e->getTraceAsString());
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch online therapists. Please try again.',
-            'error' => config('app.debug') ? $e->getMessage() : null
-        ], 500);
     }
-}
     public function getTherapist($id)
     {
         try {
@@ -941,19 +942,19 @@ class TherapistController extends Controller
             // Filter by visit type if provided
             if ($visitType) {
                 if ($visitType === 'home') {
-                    $therapistsQuery->where(function($query) {
+                    $therapistsQuery->where(function ($query) {
                         $query->where('home_visits_only', true)
-                            ->orWhere(function($subQuery) {
+                            ->orWhere(function ($subQuery) {
                                 $subQuery->where('home_visits_only', false)
-                                        ->where('clinic_visits_only', false);
+                                    ->where('clinic_visits_only', false);
                             });
                     });
                 } elseif ($visitType === 'branch') {
-                    $therapistsQuery->where(function($query) {
+                    $therapistsQuery->where(function ($query) {
                         $query->where('clinic_visits_only', true)
-                            ->orWhere(function($subQuery) {
+                            ->orWhere(function ($subQuery) {
                                 $subQuery->where('home_visits_only', false)
-                                        ->where('clinic_visits_only', false);
+                                    ->where('clinic_visits_only', false);
                             });
                     });
                 }
@@ -962,8 +963,8 @@ class TherapistController extends Controller
             $therapists = $therapistsQuery->orderBy('name')->get();
 
             Log::info("Found " . $therapists->count() . " therapists for service " . $serviceId .
-            ($locationId ? " in location " . $locationId : "") .
-            ($visitType ? " for visit type " . $visitType : ""));
+                ($locationId ? " in location " . $locationId : "") .
+                ($visitType ? " for visit type " . $visitType : ""));
 
             // Format therapist data with availability information
             $therapistData = $therapists->map(function ($therapist) use ($service) {
@@ -1005,7 +1006,7 @@ class TherapistController extends Controller
                 return [
                     'id' => $therapist->id,
                     'name' => $therapist->name,
-                     'nickname' => $therapist->nickname,
+                    'nickname' => $therapist->nickname,
                     'email' => $therapist->email,
                     'phone' => $therapist->phone,
                     'image' => $therapist->image ? url('storage/' . $therapist->image) : null,
@@ -1644,132 +1645,134 @@ class TherapistController extends Controller
 
 
     /**
- * Get services assigned to a specific therapist
- * Public endpoint for showing services when user selects a therapist first
- */
-public function getTherapistServices($therapistId, Request $request)
-{
-    try {
-        Log::info("Fetching services for therapist ID: " . $therapistId);
+     * Get services assigned to a specific therapist
+     * Public endpoint for showing services when user selects a therapist first
+     */
+    public function getTherapistServices($therapistId, Request $request)
+    {
+        try {
+            Log::info("Fetching services for therapist ID: " . $therapistId);
 
-        // Get location_id from request parameter if provided
-        $locationId = $request->query('location_id');
-        // Get visit_type from request parameter
-        $visitType = $request->query('visit_type');
+            // Get location_id from request parameter if provided
+            $locationId = $request->query('location_id');
+            // Get visit_type from request parameter
+            $visitType = $request->query('visit_type');
 
-        // Find the therapist first
-        $therapist = Therapist::find($therapistId);
+            // Find the therapist first
+            $therapist = Therapist::find($therapistId);
 
-        if (!$therapist) {
-            Log::warning("Therapist not found: " . $therapistId);
-            return response()->json([
-                'success' => false,
-                'message' => 'Therapist not found'
-            ], 404);
-        }
-
-        // Check if therapist is active
-        if (!$therapist->status) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Therapist is not currently active'
-            ], 400);
-        }
-
-        // Get services with proper relationship loading
-        $servicesQuery = $therapist->services()
-            ->where('services.status', true)
-            ->with(['treatment' => function($query) {
-                $query->select('id', 'name', 'image');
-            }]);
-
-        // If location is specified, only show services available at that location
-        if ($locationId) {
-            // Check if therapist works at this location
-            $worksAtLocation = $therapist->locations()->where('locations.id', $locationId)->exists();
-            
-            if (!$worksAtLocation) {
+            if (!$therapist) {
+                Log::warning("Therapist not found: " . $therapistId);
                 return response()->json([
                     'success' => false,
-                    'message' => 'Therapist does not work at the selected location'
+                    'message' => 'Therapist not found'
+                ], 404);
+            }
+
+            // Check if therapist is active
+            if (!$therapist->status) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Therapist is not currently active'
                 ], 400);
             }
+
+            // Get services with proper relationship loading
+            $servicesQuery = $therapist->services()
+                ->where('services.status', true)
+                ->with([
+                    'treatment' => function ($query) {
+                        $query->select('id', 'name', 'image');
+                    }
+                ]);
+
+            // If location is specified, only show services available at that location
+            if ($locationId) {
+                // Check if therapist works at this location
+                $worksAtLocation = $therapist->locations()->where('locations.id', $locationId)->exists();
+
+                if (!$worksAtLocation) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Therapist does not work at the selected location'
+                    ], 400);
+                }
+            }
+
+            $services = $servicesQuery->orderBy('services.title')->get();
+
+            Log::info("Found " . $services->count() . " services for therapist " . $therapistId);
+
+            // Format service data
+            $serviceData = $services->map(function ($service) use ($therapist, $locationId) {
+                // Calculate if service is available (therapist has started working)
+                $isAvailable = $this->hasTherapistStartedWorking($therapist->work_start_date);
+
+                // Get price information
+                $hasDiscount = $service->discount_price !== null && $service->discount_price < $service->price;
+                $isFreeService = $service->discount_price !== null && $service->discount_price == 0;
+
+                return [
+                    'id' => $service->id,
+                    'title' => $service->title,
+                    'subtitle' => $service->subtitle,
+                    'description' => $service->description,
+                    'benefits' => $service->benefits,
+                    'image' => $service->image ? url('storage/' . $service->image) : null,
+                    'duration' => $service->duration,
+                    'price' => $service->price,
+                    'discount_price' => $service->discount_price,
+                    'has_discount' => $hasDiscount,
+                    'is_free_service' => $isFreeService,
+                    'offer' => $service->offer,
+                    'treatment' => [
+                        'id' => $service->treatment->id,
+                        'name' => $service->treatment->name,
+                        'image' => $service->treatment->image ? url('storage/' . $service->treatment->image) : null,
+                    ],
+                    'therapist' => [
+                        'id' => $therapist->id,
+                        'name' => $therapist->name,
+                        'nickname' => $therapist->nickname,
+                        'work_start_date' => $therapist->work_start_date,
+                    ],
+                    'is_available' => $isAvailable,
+                    'availability_message' => !$isAvailable ?
+                        'This service will be available from ' . Carbon::parse($therapist->work_start_date)->format('F j, Y') :
+                        null,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Services fetched successfully',
+                'data' => [
+                    'therapist' => [
+                        'id' => $therapist->id,
+                        'name' => $therapist->name,
+                        'nickname' => $therapist->nickname,
+                        'email' => $therapist->email,
+                        'phone' => $therapist->phone,
+                        'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,
+                        'bio' => $therapist->bio,
+                        'work_start_date' => $therapist->work_start_date,
+                        'online_status' => $therapist->online_status,
+                    ],
+                    'services' => $serviceData,
+                    'total_services' => $serviceData->count(),
+                    'location_id' => $locationId,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("Error fetching therapist services: " . $e->getMessage());
+            Log::error("Stack trace: " . $e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch therapist services',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-
-        $services = $servicesQuery->orderBy('services.title')->get();
-
-        Log::info("Found " . $services->count() . " services for therapist " . $therapistId);
-
-        // Format service data
-        $serviceData = $services->map(function($service) use ($therapist, $locationId) {
-            // Calculate if service is available (therapist has started working)
-            $isAvailable = $this->hasTherapistStartedWorking($therapist->work_start_date);
-            
-            // Get price information
-            $hasDiscount = $service->discount_price !== null && $service->discount_price < $service->price;
-            $isFreeService = $service->discount_price !== null && $service->discount_price == 0;
-            
-            return [
-                'id' => $service->id,
-                'title' => $service->title,
-                'subtitle' => $service->subtitle,
-                'description' => $service->description,
-                'benefits' => $service->benefits,
-                'image' => $service->image ? url('storage/' . $service->image) : null,
-                'duration' => $service->duration,
-                'price' => $service->price,
-                'discount_price' => $service->discount_price,
-                'has_discount' => $hasDiscount,
-                'is_free_service' => $isFreeService,
-                'offer' => $service->offer,
-                'treatment' => [
-                    'id' => $service->treatment->id,
-                    'name' => $service->treatment->name,
-                    'image' => $service->treatment->image ? url('storage/' . $service->treatment->image) : null,
-                ],
-                'therapist' => [
-                    'id' => $therapist->id,
-                    'name' => $therapist->name,
-                    'nickname' => $therapist->nickname,
-                    'work_start_date' => $therapist->work_start_date,
-                ],
-                'is_available' => $isAvailable,
-                'availability_message' => !$isAvailable ? 
-                    'This service will be available from ' . Carbon::parse($therapist->work_start_date)->format('F j, Y') : 
-                    null,
-            ];
-        });
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Services fetched successfully',
-            'data' => [
-                'therapist' => [
-                    'id' => $therapist->id,
-                    'name' => $therapist->name,
-                    'nickname' => $therapist->nickname,
-                    'email' => $therapist->email,
-                    'phone' => $therapist->phone,
-                    'image' => $therapist->image ? asset('storage/' . $therapist->image) : null,
-                    'bio' => $therapist->bio,
-                    'work_start_date' => $therapist->work_start_date,
-                    'online_status' => $therapist->online_status,
-                ],
-                'services' => $serviceData,
-                'total_services' => $serviceData->count(),
-                'location_id' => $locationId,
-            ]
-        ]);
-
-    } catch (\Exception $e) {
-        Log::error("Error fetching therapist services: " . $e->getMessage());
-        Log::error("Stack trace: " . $e->getTraceAsString());
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch therapist services',
-            'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
-        ], 500);
     }
-}
 }

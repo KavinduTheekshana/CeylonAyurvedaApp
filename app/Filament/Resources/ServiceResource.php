@@ -6,6 +6,7 @@ use App\Filament\Resources\ServiceResource\Pages;
 use App\Filament\Resources\ServiceResource\RelationManagers;
 use App\Models\Service;
 use App\Models\Treatment;
+use App\Models\Location;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -36,6 +37,10 @@ class ServiceResource extends Resource
                     ->label('Treatment')
                     ->options(Treatment::pluck('name', 'id'))
                     ->required(),
+                Select::make('location_id')
+                    ->label('Location')
+                    ->options(Location::pluck('name', 'id'))
+                    ->required(),
                 FileUpload::make('image')
                     ->directory('services') // Store images in storage/app/public/services
                     ->image()
@@ -59,6 +64,7 @@ class ServiceResource extends Resource
             ->columns([
                 ImageColumn::make('image')->label('Image')->size(50),
                 TextColumn::make('treatment.name')->label('Treatment')->sortable(),
+                TextColumn::make('location.name')->label('Location')->sortable(),
                 TextColumn::make('title')->label('Title')->sortable()->searchable(),
                 TextColumn::make('subtitle')->label('Subtitle')->sortable(),
                 TextColumn::make('price')->label('Price')->sortable(),

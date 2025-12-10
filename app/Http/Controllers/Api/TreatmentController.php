@@ -13,8 +13,10 @@ class TreatmentController extends Controller
         $query = Treatment::where('status', 1);
 
         if ($locationId) {
+            // Only return treatments that have active services for this location
             $query->whereHas('services', function ($q) use ($locationId) {
-                $q->where('location_id', $locationId);
+                $q->where('location_id', $locationId)
+                    ->where('status', 1);
             });
         }
 

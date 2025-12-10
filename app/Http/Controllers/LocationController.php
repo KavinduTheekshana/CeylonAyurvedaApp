@@ -4,9 +4,120 @@ namespace App\Http\Controllers;
 use App\Models\Investment;
 use App\Models\Location;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class LocationController extends Controller
 {
+    /**
+     * Find the nearest location based on user's coordinates using Haversine formula
+     */
+    public function findNearest(Request $request)
+    {
+        try {
+            $request->validate([
+                'latitude' => 'required|numeric|between:-90,90',
+                'longitude' => 'required|numeric|between:-180,180',
+            ]);
+
+            $userLat = $request->latitude;
+            $userLon = $request->longitude;
+
+            // Get all active locations with coordinates
+            $locations = Location::where('status', true)
+                ->whereNotNull('latitude')
+                ->whereNotNull('longitude')
+                ->get();
+
+            if ($locations->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No active locations found'
+                ], 404);
+            }
+
+            // Calculate distance for each location using Haversine formula
+            $nearestLocation = null;
+            $minDistance = PHP_FLOAT_MAX;
+
+            foreach ($locations as $location) {
+                $distance = $this->calculateDistance(
+                    $userLat,
+                    $userLon,
+                    $location->latitude,
+                    $location->longitude
+                );
+
+                if ($distance < $minDistance) {
+                    $minDistance = $distance;
+                    $nearestLocation = $location;
+                }
+            }
+
+            if (!$nearestLocation) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Could not determine nearest location'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'id' => $nearestLocation->id,
+                    'name' => $nearestLocation->name,
+                    'slug' => $nearestLocation->slug,
+                    'address' => $nearestLocation->address,
+                    'city' => $nearestLocation->city,
+                    'postcode' => $nearestLocation->postcode,
+                    'latitude' => $nearestLocation->latitude,
+                    'longitude' => $nearestLocation->longitude,
+                    'phone' => $nearestLocation->phone,
+                    'email' => $nearestLocation->email,
+                    'description' => $nearestLocation->description,
+                    'operating_hours' => $nearestLocation->operating_hours,
+                    'image' => $nearestLocation->image,
+                    'status' => $nearestLocation->status,
+                    'service_radius_miles' => $nearestLocation->service_radius_miles,
+                    'distance_miles' => round($minDistance, 2),
+                ]
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error finding nearest location: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to find nearest location',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Calculate distance between two coordinates using Haversine formula
+     * Returns distance in miles
+     */
+    private function calculateDistance($lat1, $lon1, $lat2, $lon2)
+    {
+        $earthRadius = 3959; // Earth's radius in miles
+
+        $latDiff = deg2rad($lat2 - $lat1);
+        $lonDiff = deg2rad($lon2 - $lon1);
+
+        $a = sin($latDiff / 2) * sin($latDiff / 2) +
+            cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+            sin($lonDiff / 2) * sin($lonDiff / 2);
+
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return $earthRadius * $c;
+    }
     // public function index()
     // {
     //     $locations = Location::active()

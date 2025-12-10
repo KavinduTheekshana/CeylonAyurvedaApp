@@ -12,6 +12,7 @@ class Service extends Model
 
     protected $fillable = [
         'treatment_id',
+        'location_id',
         'title',
         'subtitle',
         'price',

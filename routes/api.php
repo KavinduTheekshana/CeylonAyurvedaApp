@@ -129,14 +129,17 @@ Route::get('/therapists/details/{id}', [TherapistController::class, 'show']);
 
 
 // Treatment routes
-// Route::get('/treatments', [TreatmentController::class, 'index']);
-Route::get('/treatments/{id}', [TreatmentController::class, 'show']);
-// routes/api.php - Add these routes
+// Route with location filtering first
+Route::get('treatments', [TreatmentController::class, 'index']);
+Route::get('treatments/location/{location_id}', [TreatmentController::class, 'index']);
+Route::get('treatments/{id}', [TreatmentController::class, 'show']);
+
+// Location routes
 Route::get('locations', [LocationController::class, 'index']);
+Route::post('locations/nearest', [LocationController::class, 'findNearest']);
 Route::get('locations/{id}', [LocationController::class, 'show']);
 
-// Update existing routes to include location filtering
-Route::get('treatments/{location_id?}', [TreatmentController::class, 'index']);
+// Service routes with location filtering
 Route::get('services/{treatmentId}/{location_id?}', [ServiceController::class, 'getServicesForTreatment']);
 
 
@@ -532,7 +535,7 @@ Route::prefix('therapist')->group(function () {
 
 
 
-         // THERAPIST CHAT ROUTES - ADD THESE
+        // THERAPIST CHAT ROUTES - ADD THESE
         Route::prefix('chats')->group(function () {
             Route::get('/', [TherapistChatController::class, 'index']);
             Route::get('/{chatRoomId}', [TherapistChatController::class, 'show']);
